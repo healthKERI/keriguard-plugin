@@ -1,0 +1,2 @@
+[locksmith.plugins]
+keriguard = keriguard.plugin:KERIGuardPlugin

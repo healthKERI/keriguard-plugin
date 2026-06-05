@@ -1,0 +1,15 @@
+Metadata-Version: 2.4
+Name: KERIGuard
+Version: 0.0.1
+Summary: KERIGuard plugin for Locksmith application.
+Author-email: Ari Argoud <ari@healthkeri.com>
+License: MIT
+Keywords: healthKERI,cryptography,KERI,ACDC
+Classifier: Programming Language :: Python :: 3.12
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Requires-Python: >=3.12.9
+Description-Content-Type: text/markdown
+
+# keriguard-plugin
+keriguard UI plugin for Locksmith
