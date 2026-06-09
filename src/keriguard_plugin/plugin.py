@@ -39,8 +39,10 @@ class KERIGuardPlugin(PluginBase, AccountProviderPlugin):
 
     def _build_pages(self, app: "LocksmithApplication") -> None:
         from .machines.list import MachinesListPage
+        from .settings import KERIGuardSettingsPage          # ADD THIS LINE
         self._pages = {
             "keriguard_machines": MachinesListPage(app, self.parent),
+            "keriguard_settings": KERIGuardSettingsPage(app, self.parent),  # ADD THIS LINE
             "keriguard_placeholder": KERIGuardPlaceholderPage("KERIGuard", self.parent),
         }
 
@@ -92,6 +94,7 @@ class KERIGuardPlugin(PluginBase, AccountProviderPlugin):
 
         nav_buttons_config = [
             (":/assets/material-icons/settings-hover.svg", "Machines", "keriguard_machines"),
+            (":/assets/material-icons/settings-hover.svg", "Settings", "keriguard_settings"),  # ADD THIS LINE
         ]
 
         self._nav_buttons_by_page: dict[str, MenuButton] = {}
