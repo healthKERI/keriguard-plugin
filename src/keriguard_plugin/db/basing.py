@@ -42,6 +42,11 @@ class KERIGuardTeam:
     witnessLimit: int | None = None
     mailboxLimit: int | None = None
 
+@dataclass
+class KERIGuardSettings:
+    """Persisted settings for the KERIGuard plugin."""
+    registry_name: str = ""
+    registrar_url: str = ""
 
 class KERIGuardBaser(dbing.LMDBer):
     """Plugin-owned LMDB for KERIGuard state."""
@@ -52,6 +57,7 @@ class KERIGuardBaser(dbing.LMDBer):
     def __init__(self, name="keriguard", headDirPath=None, reopen=True, **kwa):
         self.keriguardAccounts = None
         self.keriguardTeams = None
+        self.keriguardSettings = None
         super(KERIGuardBaser, self).__init__(name=name, headDirPath=headDirPath, reopen=reopen, **kwa)
 
     def reopen(self, **kwa):
@@ -61,6 +67,9 @@ class KERIGuardBaser(dbing.LMDBer):
         )
         self.keriguardTeams = koming.Komer(
             db=self, subkey='hkTeams.', schema=KERIGuardTeam, seperator='>'
+        )
+        self.keriguardSettings = koming.Komer(
+            db=self, subkey='kgSettings.', schema=KERIGuardSettings, seperator='>'
         )
         return self.env
 
