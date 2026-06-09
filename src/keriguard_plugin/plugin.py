@@ -81,7 +81,7 @@ class KERIGuardPlugin(PluginBase, AccountProviderPlugin):
 
     def _build_menu(self) -> None:
         self._account_button = MenuButton(
-            QIcon(":/assets/material-icons/settings-hover.svg"),
+            QIcon(":/assets/custom/logos/keriguard-darkmode.png"),
             "KERIGuard"
         )
         self._account_button.is_account_btn = True

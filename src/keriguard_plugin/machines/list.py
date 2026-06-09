@@ -1,7 +1,6 @@
 # -*- encoding: utf-8 -*-
 """keriguard.machines.list — Machines list page."""
-import math
-from typing import Dict, Any, TYPE_CHECKING, List
+from typing import Dict, Any, TYPE_CHECKING
 
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QSizePolicy
 from PySide6.QtGui import QPalette, QColor
@@ -48,12 +47,8 @@ class MachinesListPage(QWidget):
             row_actions=[],
             items_per_page=10,
             show_search=True,
-            transform_func=self._transform_machine_to_row,
             parent=self,
         )
-
-        self.table.load_requested.connect(self._on_load_requested)
-        self.table.load_error.connect(self._on_load_error)
 
         layout.addWidget(self.table)
 
@@ -70,30 +65,22 @@ class MachinesListPage(QWidget):
             "_said": said,
         }
 
-    def _on_load_requested(self, params: dict) -> None:
-        logger.info(f"KERIGuard machines list load requested!!!")
-        self._machines_cache.clear()
-        _empty = {"machines": [], "count": 0, "page": 0, "num_pages": 1}
-
+    def _load_rows(self) -> list[dict[str, Any]]:
         if not self.app or not self.app.vault:
-            self.table.set_page_data(_empty, data_key="machines")
-            return
+            return []
 
         kg_db = self.app.vault.plugin_state.get("keriguard", {}).get("db")
         settings = kg_db.keriguardSettings.get(keys=("settings",)) if kg_db else None
         if not settings or not settings.registry_name:
-            self.table.set_page_data(_empty, data_key="machines")
-            return
+            return []
 
         registry = self.app.vault.rgy.registryByName(settings.registry_name)
         if registry is None:
             logger.info(f"KERIGuard: registry {settings.registry_name} not found")
-            self.table.set_page_data(_empty, data_key="machines")
-            return
+            return []
 
         rgy = self.app.vault.rgy
-        machines: list[dict] = []
-        logger.info(f"INTERFACE SCHEMA: {Schema.INTERFACE_SCHEMA}")
+        rows: list[dict[str, Any]] = []
         try:
             for saider in (rgy.reger.schms.get(keys=Schema.INTERFACE_SCHEMA) or []):
                 try:
@@ -103,7 +90,7 @@ class MachinesListPage(QWidget):
                     payload = creder.attrib
                     iface = payload.get("interface", {})
                     meta = payload.get("interfaceMetadata", {})
-                    machines.append({
+                    rows.append(self._transform_machine_to_row({
                         "said": creder.said,
                         "name": meta.get("interfaceName", ""),
                         "aid": payload.get("i", ""),
@@ -111,35 +98,20 @@ class MachinesListPage(QWidget):
                         "port": str(iface.get("listenPort", "")),
                         "environment": meta.get("environment", ""),
                         "status": "issued",
-                    })
+                    }))
                 except Exception as exc:
                     logger.warning(f"Skipping credential {saider.qb64}: {exc}")
         except Exception as exc:
             logger.exception(f"Error iterating credentials: {exc}")
 
-        page = params.get("page", 0)
-        page_size = params.get("page_size", 10)
-        total = len(machines)
-        num_pages = max(1, math.ceil(total / page_size)) if total else 1
-        self.table.set_page_data(
-            {
-                "machines": machines[page * page_size : (page + 1) * page_size],
-                "count": total,
-                "page": page,
-                "num_pages": num_pages,
-            },
-            data_key="machines",
-        )
+        return rows
+
     def _on_row_action(self, row_data: Dict[str, Any], action: str):
         pass
-
-    @staticmethod
-    def _on_load_error(error_msg: str):
-        logger.error(f"Table load error: {error_msg}")
 
     def set_vault_name(self, vault_name: str):
         self.vault_name = vault_name
 
     def on_show(self):
         self._machines_cache.clear()
-        self.table.request_load()
+        self.table.set_static_data(self._load_rows())
