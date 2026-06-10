@@ -1,5 +1,5 @@
 # -*- encoding: utf-8 -*-
-"""keriguard.machines.list — Machines list page."""
+"""keriguard.connections.list — Connections list page."""
 from typing import Dict, Any, TYPE_CHECKING
 
 from PySide6.QtCore import Signal
@@ -17,16 +17,16 @@ if TYPE_CHECKING:
 logger = help.ogler.getLogger(__name__)
 
 
-class MachinesListPage(QWidget):
-    """Paginated list of KERIGuard machines."""
-    view_machine = Signal(str)  # emits interface credential SAID when View is triggered
+class ConnectionsListPage(QWidget):
+    """Paginated list of KERIGuard connections."""
+
+    view_connection = Signal(str)  # emits connection credential SAID
 
     def __init__(self, app, parent: "VaultPage | None" = None):
         super().__init__(parent)
         self._parent = parent
         self.app = app
         self.vault_name = ""
-        self._machines_cache: dict[str, dict[str, Any]] = {}
         self._setup_ui()
 
     def _setup_ui(self):
@@ -41,10 +41,16 @@ class MachinesListPage(QWidget):
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
         self.table = PaginatedTableWidget(
-            columns=["Name", "AID", "Address", "Port", "Status"],
-            column_widths={"Name": 180, "Address": 130, "Port": 65, "Status": 90, "Actions": 90},
-            title="Machines",
-            icon_path=":/assets/material-icons/devices.svg",
+            columns=["Name", "SAID", "Peer 1", "Peer 2", "Status"],
+            column_widths={
+                "Name": 180,
+                "Status": 90,
+                "Peer 1": 130,
+                "Peer 2": 130,
+                "Actions": 90,
+            },
+            title="Connections",
+            icon_path=":/assets/material-icons/airline_stops.svg",
             show_add_button=False,
             row_actions=["View"],
             row_action_icons={"View": ":/assets/material-icons/visibility.svg"},
@@ -57,16 +63,26 @@ class MachinesListPage(QWidget):
         self.table.row_action_triggered.connect(self._on_row_action)
         self.table.row_clicked.connect(self._on_row_clicked)
 
-    def _transform_machine_to_row(self, machine: dict[str, Any]) -> dict[str, Any]:
-        said = machine.get("said", "")
-        self._machines_cache[said] = machine
+    def _get_peer_name(self, interface_said: str) -> str:
+        if not interface_said or not self.app or not self.app.vault:
+            return interface_said
+        try:
+            creder, *_ = self.app.vault.rgy.reger.cloneCred(said=interface_said)
+            return (
+                creder.attrib.get("interfaceMetadata", {}).get("interfaceName", "")
+                or interface_said
+            )
+        except Exception:
+            return interface_said
+
+    def _transform_connection_to_row(self, conn: dict[str, Any]) -> dict[str, Any]:
         return {
-            "Name": machine.get("name", ""),
-            "AID": machine.get("aid", ""),
-            "Address": machine.get("address", ""),
-            "Port": machine.get("port", ""),
-            "Status": machine.get("status", "").capitalize(),
-            "_said": said,
+            "Name": conn.get("connection_name", ""),
+            "SAID": conn.get("said", ""),
+            "Peer 1": conn.get("peer1_name", ""),
+            "Peer 2": conn.get("peer2_name", ""),
+            "Status": "Issued",
+            "_said": conn.get("said", ""),
         }
 
     def _load_rows(self) -> list[dict[str, Any]]:
@@ -86,27 +102,27 @@ class MachinesListPage(QWidget):
         rgy = self.app.vault.rgy
         rows: list[dict[str, Any]] = []
         try:
-            for saider in (rgy.reger.schms.get(keys=Schema.INTERFACE_SCHEMA) or []):
+            for saider in (rgy.reger.schms.get(keys=Schema.CONNECTION_SCHEMA) or []):
                 try:
                     creder, *_ = rgy.reger.cloneCred(said=saider.qb64)
                     if creder.regi != registry.regk:
                         continue
-                    payload = creder.attrib
-                    iface = payload.get("interface", {})
-                    meta = payload.get("interfaceMetadata", {})
-                    rows.append(self._transform_machine_to_row({
+
+                    edge_block = creder.sad.get("e", {})
+                    peer1 = edge_block.get("peer1", {})
+                    peer2 = edge_block.get("peer2", {})
+                    conn_meta = peer1.get("connectionMetadata", {})
+
+                    rows.append(self._transform_connection_to_row({
                         "said": creder.said,
-                        "name": meta.get("interfaceName", ""),
-                        "aid": payload.get("i", ""),
-                        "address": ", ".join(iface.get("address", [])),
-                        "port": str(iface.get("listenPort", "")),
-                        "environment": meta.get("environment", ""),
-                        "status": "issued",
+                        "peer1_name": self._get_peer_name(peer1.get("n", "")),
+                        "peer2_name": self._get_peer_name(peer2.get("n", "")),
+                        "connection_name": conn_meta.get("connectionName", ""),
                     }))
                 except Exception as exc:
-                    logger.warning(f"Skipping credential {saider.qb64}: {exc}")
+                    logger.warning(f"Skipping connection credential {saider.qb64}: {exc}")
         except Exception as exc:
-            logger.exception(f"Error iterating credentials: {exc}")
+            logger.exception(f"Error iterating connection credentials: {exc}")
 
         return rows
 
@@ -115,15 +131,14 @@ class MachinesListPage(QWidget):
             data: Dict[str, Any] = {str(k): v for k, v in row_data.items()}
             self._on_row_action(data, "View")
 
-    def _on_row_action(self, row_data: Dict[str, Any], action: str):
+    def _on_row_action(self, row_data: Dict[str, Any], action: str) -> None:
         if action == "View":
             said = row_data.get("_said", "")
             if said:
-                self.view_machine.emit(said)
-                
-    def set_vault_name(self, vault_name: str):
+                self.view_connection.emit(said)
+
+    def set_vault_name(self, vault_name: str) -> None:
         self.vault_name = vault_name
 
-    def on_show(self):
-        self._machines_cache.clear()
+    def on_show(self) -> None:
         self.table.set_static_data(self._load_rows())

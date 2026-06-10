@@ -1,6 +1,6 @@
 # -*- encoding: utf-8 -*-                                                                                                                                                                                                                                                                                      
 """keriguard.machines.detail — Machine detail page."""
-from typing import Any, TYPE_CHECKING
+from typing import Any, Dict, TYPE_CHECKING
 
 from PySide6.QtCore import Signal, Qt
 from PySide6.QtWidgets import (
@@ -28,6 +28,7 @@ class MachineDetailPage(QWidget):
     """Detail view for a single KERIGuard machine (interface credential)."""
 
     back_clicked = Signal()
+    view_connection = Signal(str)  # emits connection credential SAID
 
     def __init__(self, app: "LocksmithApplication", parent: "VaultPage | None" = None):
         super().__init__(parent)
@@ -202,6 +203,7 @@ class MachineDetailPage(QWidget):
             parent=self,
         )
         self.connections_table.row_action_triggered.connect(self._on_connection_action)
+        self.connections_table.row_clicked.connect(self._on_connection_row_clicked)
         layout.addWidget(self.connections_table, 1)
         return section
 
@@ -247,9 +249,16 @@ class MachineDetailPage(QWidget):
         )
         logger.info(f"Machine {self._current_said[:8]}…: description saved locally")
 
+    def _on_connection_row_clicked(self, row_data: object) -> None:
+        if isinstance(row_data, dict):
+            data: Dict[str, Any] = {str(k): v for k, v in row_data.items()}
+            self._on_connection_action(data, "View")
+
     def _on_connection_action(self, row_data: dict, action: str) -> None:
-        # Connection detail page is deferred.
-        logger.debug(f"Connection action '{action}' on {row_data.get('_conn_said', '')} — not yet implemented")
+        if action == "View":
+            said = row_data.get("_conn_said", "")
+            if said:
+                self.view_connection.emit(said)
 
     def load_machine(self, said: str) -> None:
         self._current_said = said
