@@ -39,12 +39,21 @@ class KERIGuardPlugin(PluginBase, AccountProviderPlugin):
 
     def _build_pages(self, app: "LocksmithApplication") -> None:
         from .machines.list import MachinesListPage
-        from .settings import KERIGuardSettingsPage          # ADD THIS LINE
+        from .machines.detail import MachineDetailPage
+        from .settings import KERIGuardSettingsPage
+
+        machines_list = MachinesListPage(app, self.parent)
+        machine_detail = MachineDetailPage(app, self.parent)
+
         self._pages = {
-            "keriguard_machines": MachinesListPage(app, self.parent),
-            "keriguard_settings": KERIGuardSettingsPage(app, self.parent),  # ADD THIS LINE
+            "keriguard_machines": machines_list,
+            "keriguard_machine_detail": machine_detail,
+            "keriguard_settings": KERIGuardSettingsPage(app, self.parent),
             "keriguard_placeholder": KERIGuardPlaceholderPage("KERIGuard", self.parent),
         }
+
+        machines_list.view_machine.connect(self._on_view_machine)
+        machine_detail.back_clicked.connect(self._on_back_to_machines)
 
     def on_vault_opened(self, vault: "Vault") -> None:
         self._db = KERIGuardBaser(name=vault.hby.name, reopen=True)
@@ -87,13 +96,25 @@ class KERIGuardPlugin(PluginBase, AccountProviderPlugin):
         self._account_button.is_account_btn = True
         self._keriguard_submenu_items = self._create_submenu_items()
 
+    def _on_view_machine(self, said: str) -> None:
+        detail_page = self._pages.get("keriguard_machine_detail")
+        if detail_page:
+            detail_page.load_machine(said)
+            self._navigate("keriguard_machine_detail")
+
+    def _on_back_to_machines(self) -> None:
+        self._navigate("keriguard_machines")
+        list_page = self._pages.get("keriguard_machines")
+        if list_page and hasattr(list_page, "on_show"):
+            list_page.on_show()
+
     def _create_submenu_items(self) -> list[QWidget]:
         items: list[QWidget] = []
         items.append(BackButton(dark_mode=False))
         items.append(MenuSpacer(15))
 
         nav_buttons_config = [
-            (":/assets/material-icons/settings-hover.svg", "Machines", "keriguard_machines"),
+            (":/assets/material-icons/devices.svg", "Machines", "keriguard_machines"),
             (":/assets/material-icons/settings-hover.svg", "Settings", "keriguard_settings"),  # ADD THIS LINE
         ]
 
