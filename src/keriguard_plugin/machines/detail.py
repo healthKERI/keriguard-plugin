@@ -28,6 +28,7 @@ class MachineDetailPage(QWidget):
     """Detail view for a single KERIGuard machine (interface credential)."""
 
     back_clicked = Signal()
+    view_connection = Signal(str)  # emits connection credential SAID
 
     def __init__(self, app: "LocksmithApplication", parent: "VaultPage | None" = None):
         super().__init__(parent)
@@ -248,8 +249,10 @@ class MachineDetailPage(QWidget):
         logger.info(f"Machine {self._current_said[:8]}…: description saved locally")
 
     def _on_connection_action(self, row_data: dict, action: str) -> None:
-        # Connection detail page is deferred.
-        logger.debug(f"Connection action '{action}' on {row_data.get('_conn_said', '')} — not yet implemented")
+        if action == "View":
+            said = row_data.get("_conn_said", "")
+            if said:
+                self.view_connection.emit(said)
 
     def load_machine(self, said: str) -> None:
         self._current_said = said
