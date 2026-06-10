@@ -114,7 +114,7 @@ class KERIGuardPlugin(PluginBase, AccountProviderPlugin):
         items.append(MenuSpacer(15))
 
         nav_buttons_config = [
-            (":/assets/material-icons/settings-hover.svg", "Machines", "keriguard_machines"),
+            (":/assets/material-icons/devices.svg", "Machines", "keriguard_machines"),
             (":/assets/material-icons/settings-hover.svg", "Settings", "keriguard_settings"),  # ADD THIS LINE
         ]
 

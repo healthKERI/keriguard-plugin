@@ -48,6 +48,13 @@ class KERIGuardSettings:
     registry_name: str = ""
     registrar_url: str = ""
 
+
+@dataclass
+class KERIGuardMachineNote:
+    """Local user-editable note stored against a machine's interface credential SAID."""
+    description: str = ""
+
+
 class KERIGuardBaser(dbing.LMDBer):
     """Plugin-owned LMDB for KERIGuard state."""
     TailDirPath = "keri/kg"
@@ -58,6 +65,7 @@ class KERIGuardBaser(dbing.LMDBer):
         self.keriguardAccounts = None
         self.keriguardTeams = None
         self.keriguardSettings = None
+        self.keriguardMachineNotes = None
         super(KERIGuardBaser, self).__init__(name=name, headDirPath=headDirPath, reopen=reopen, **kwa)
 
     def reopen(self, **kwa):
@@ -70,6 +78,9 @@ class KERIGuardBaser(dbing.LMDBer):
         )
         self.keriguardSettings = koming.Komer(
             db=self, subkey='kgSettings.', schema=KERIGuardSettings, seperator='>'
+        )
+        self.keriguardMachineNotes = koming.Komer(
+            db=self, subkey='kgMachineNotes.', schema=KERIGuardMachineNote, seperator='>'
         )
         return self.env
 

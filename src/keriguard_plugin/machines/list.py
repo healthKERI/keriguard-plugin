@@ -42,9 +42,9 @@ class MachinesListPage(QWidget):
 
         self.table = PaginatedTableWidget(
             columns=["Name", "AID", "Address", "Port", "Environment", "Status"],
-            column_widths={"Name": 180, "Address": 130, "Port": 65, "Environment": 110, "Status": 90},
+            column_widths={"Name": 180, "Address": 130, "Port": 65, "Environment": 110, "Status": 90, "Actions": 90},
             title="Machines",
-            icon_path=":/assets/material-icons/settings-hover.svg",
+            icon_path=":/assets/material-icons/devices.svg",
             show_add_button=False,
             row_actions=["View"],
             row_action_icons={"View": ":/assets/material-icons/visibility.svg"},
@@ -55,6 +55,7 @@ class MachinesListPage(QWidget):
 
         layout.addWidget(self.table)
         self.table.row_action_triggered.connect(self._on_row_action)
+        self.table.row_clicked.connect(self._on_row_clicked)
 
     def _transform_machine_to_row(self, machine: dict[str, Any]) -> dict[str, Any]:
         said = machine.get("said", "")
@@ -109,6 +110,11 @@ class MachinesListPage(QWidget):
             logger.exception(f"Error iterating credentials: {exc}")
 
         return rows
+
+    def _on_row_clicked(self, row_data: object) -> None:
+        if isinstance(row_data, dict):
+            data: Dict[str, Any] = {str(k): v for k, v in row_data.items()}
+            self._on_row_action(data, "View")
 
     def _on_row_action(self, row_data: Dict[str, Any], action: str):
         if action == "View":

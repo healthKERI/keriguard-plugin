@@ -16,6 +16,7 @@ from locksmith.ui.toolkit.widgets import LocksmithButton
 from locksmith.ui.toolkit.widgets.buttons import LocksmithCopyButton, BackButton
 from locksmith.ui.vault.healthKERI.profile.widgets import EditableInfoRow
 from keriguard.core.wireguarding import Schema
+from ..db.basing import KERIGuardMachineNote
 
 if TYPE_CHECKING:
     from locksmith.core.apping import LocksmithApplication
@@ -88,14 +89,14 @@ class MachineDetailPage(QWidget):
 
         icon_label = QLabel()
         icon_label.setFixedSize(80, 80)
-        icon = QIcon(":/assets/material-icons/settings-hover.svg")
+        icon = QIcon(":/assets/material-icons/devices.svg")
         if not icon.isNull():
             icon_label.setPixmap(icon.pixmap(80, 80))
         icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         icon_label.setStyleSheet(f"""                                                                                                                                                                                                                                                                          
               background-color: {colors.BACKGROUND_HOVER};                                                                                                                                                                                                                                                       
               border: 1px solid {colors.BORDER_FOCUS};                                                                                                                                                                                                                                                           
-              border-radius: 40px;                                                                                                                                                                                                                                                                               
+              # border-radius: 40px;                                                                                                                                                                                                                                                                               
           """)
         layout.addWidget(icon_label)
 
@@ -146,20 +147,24 @@ class MachineDetailPage(QWidget):
         layout.addWidget(said_row)
         layout.addWidget(self._divider())
 
-        # Standard read-only attribute rows
-        self.address_row = EditableInfoRow("Address", "—", "address", editable=False)
-        layout.addWidget(self.address_row)
+        # Address — copyable read-only row
+        addr_widget, self._address_value, self._address_copy_btn = self._create_copyable_row("Address")
+        layout.addWidget(addr_widget)
         layout.addWidget(self._divider())
 
-        self.port_row = EditableInfoRow("Port", "—", "port", editable=False)
-        layout.addWidget(self.port_row)
+        # Port — copyable read-only row
+        port_widget, self._port_value, self._port_copy_btn = self._create_copyable_row("Port")
+        layout.addWidget(port_widget)
         layout.addWidget(self._divider())
 
         self.environment_row = EditableInfoRow("Environment", "—", "environment", editable=False)
         layout.addWidget(self.environment_row)
         layout.addWidget(self._divider())
 
-        self.description_row = EditableInfoRow("Description", "—", "description", editable=False)
+        # Description — editable, saved locally to KERIGuardBaser
+        self.description_row = EditableInfoRow("Description", "—", "description", editable=True)
+        self.description_row.value_label.setWordWrap(True)
+        self.description_row.value_changed.connect(self._on_description_changed)
         layout.addWidget(self.description_row)
         layout.addWidget(self._divider())
 
@@ -188,12 +193,12 @@ class MachineDetailPage(QWidget):
                 "Status": 80,
             },
             title="Peer Connections",
-            icon_path=":/assets/material-icons/settings-hover.svg",
+            icon_path=":/assets/material-icons/airline_stops.svg",
             show_add_button=False,
             row_actions=["View"],
             row_action_icons={"View": ":/assets/material-icons/visibility.svg"},
             items_per_page=10,
-            show_search=False,
+            show_search=True,
             parent=self,
         )
         self.connections_table.row_action_triggered.connect(self._on_connection_action)
@@ -208,6 +213,39 @@ class MachineDetailPage(QWidget):
         )
         div.setFixedHeight(1)
         return div
+
+    def _create_copyable_row(self, label_text: str) -> tuple:
+        """Return (widget, value_label, copy_btn) for a read-only row with a copy button."""
+        row = QWidget()
+        row_layout = QHBoxLayout(row)
+        row_layout.setContentsMargins(0, 15, 0, 15)
+        row_layout.setSpacing(16)
+
+        label = QLabel(label_text)
+        label.setFixedWidth(120)
+        label.setStyleSheet("font-size: 14px; font-weight: 600; color: #555;")
+        row_layout.addWidget(label)
+
+        value_label = QLabel("—")
+        value_label.setStyleSheet("font-size: 14px; color: #333;")
+        row_layout.addWidget(value_label, 1)
+
+        copy_btn = LocksmithCopyButton(copy_content="")
+        row_layout.addWidget(copy_btn)
+
+        return row, value_label, copy_btn
+
+    def _on_description_changed(self, field_name: str, new_value: str) -> None:
+        if not self._current_said or not self.app or not self.app.vault:
+            return
+        kg_db = self.app.vault.plugin_state.get("keriguard", {}).get("db")
+        if kg_db is None:
+            return
+        kg_db.keriguardMachineNotes.pin(
+            keys=(self._current_said,),
+            val=KERIGuardMachineNote(description=new_value),
+        )
+        logger.info(f"Machine {self._current_said[:8]}…: description saved locally")
 
     def _on_connection_action(self, row_data: dict, action: str) -> None:
         # Connection detail page is deferred.
@@ -237,10 +275,21 @@ class MachineDetailPage(QWidget):
         self.said_value.setText(creder.said)
         self._said_copy_btn._copy_content = creder.said  # update in-place; _copy_content is the backing attr
 
-        self.address_row.set_value(", ".join(iface.get("address", [])) or "—")
-        self.port_row.set_value(str(iface.get("listenPort", "")) or "—")
+        address_str = ", ".join(iface.get("address", [])) or "—"
+        self._address_value.setText(address_str)
+        self._address_copy_btn._copy_content = address_str
+
+        port_str = str(iface.get("listenPort", "")) or "—"
+        self._port_value.setText(port_str)
+        self._port_copy_btn._copy_content = port_str
+
         self.environment_row.set_value(meta.get("environment", "") or "—")
-        self.description_row.set_value(meta.get("description", "") or "—")
+
+        kg_db = self.app.vault.plugin_state.get("keriguard", {}).get("db")
+        note = kg_db.keriguardMachineNotes.get(keys=(creder.said,)) if kg_db else None
+        description = note.description if note else meta.get("description", "")
+        self.description_row.set_value(description or "—")
+
         self.status_row.set_value("Issued")
 
 
