@@ -2,6 +2,7 @@
 """keriguard.machines.list — Machines list page."""
 from typing import Dict, Any, TYPE_CHECKING
 
+from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QSizePolicy
 from PySide6.QtGui import QPalette, QColor
 from keri import help
@@ -18,6 +19,7 @@ logger = help.ogler.getLogger(__name__)
 
 class MachinesListPage(QWidget):
     """Paginated list of KERIGuard machines."""
+    view_machine = Signal(str)  # emits interface credential SAID when View is triggered
 
     def __init__(self, app, parent: "VaultPage | None" = None):
         super().__init__(parent)
@@ -44,13 +46,15 @@ class MachinesListPage(QWidget):
             title="Machines",
             icon_path=":/assets/material-icons/settings-hover.svg",
             show_add_button=False,
-            row_actions=[],
+            row_actions=["View"],
+            row_action_icons={"View": ":/assets/material-icons/visibility.svg"},
             items_per_page=10,
             show_search=True,
             parent=self,
         )
 
         layout.addWidget(self.table)
+        self.table.row_action_triggered.connect(self._on_row_action)
 
     def _transform_machine_to_row(self, machine: dict[str, Any]) -> dict[str, Any]:
         said = machine.get("said", "")
@@ -107,8 +111,11 @@ class MachinesListPage(QWidget):
         return rows
 
     def _on_row_action(self, row_data: Dict[str, Any], action: str):
-        pass
-
+        if action == "View":
+            said = row_data.get("_said", "")
+            if said:
+                self.view_machine.emit(said)
+                
     def set_vault_name(self, vault_name: str):
         self.vault_name = vault_name
 
