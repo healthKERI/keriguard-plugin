@@ -1,6 +1,6 @@
 # -*- encoding: utf-8 -*-                                                                                                                                                                                                                                                                                      
 """keriguard.machines.detail — Machine detail page."""
-from typing import Any, TYPE_CHECKING
+from typing import Any, Dict, TYPE_CHECKING
 
 from PySide6.QtCore import Signal, Qt
 from PySide6.QtWidgets import (
@@ -203,6 +203,7 @@ class MachineDetailPage(QWidget):
             parent=self,
         )
         self.connections_table.row_action_triggered.connect(self._on_connection_action)
+        self.connections_table.row_clicked.connect(self._on_connection_row_clicked)
         layout.addWidget(self.connections_table, 1)
         return section
 
@@ -247,6 +248,11 @@ class MachineDetailPage(QWidget):
             val=KERIGuardMachineNote(description=new_value),
         )
         logger.info(f"Machine {self._current_said[:8]}…: description saved locally")
+
+    def _on_connection_row_clicked(self, row_data: object) -> None:
+        if isinstance(row_data, dict):
+            data: Dict[str, Any] = {str(k): v for k, v in row_data.items()}
+            self._on_connection_action(data, "View")
 
     def _on_connection_action(self, row_data: dict, action: str) -> None:
         if action == "View":

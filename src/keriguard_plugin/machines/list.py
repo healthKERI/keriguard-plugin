@@ -41,8 +41,8 @@ class MachinesListPage(QWidget):
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
         self.table = PaginatedTableWidget(
-            columns=["Name", "AID", "Address", "Port", "Environment", "Status"],
-            column_widths={"Name": 180, "Address": 130, "Port": 65, "Environment": 110, "Status": 90, "Actions": 90},
+            columns=["Name", "AID", "Address", "Port", "Status"],
+            column_widths={"Name": 180, "Address": 130, "Port": 65, "Status": 90, "Actions": 90},
             title="Machines",
             icon_path=":/assets/material-icons/devices.svg",
             show_add_button=False,
@@ -65,7 +65,6 @@ class MachinesListPage(QWidget):
             "AID": machine.get("aid", ""),
             "Address": machine.get("address", ""),
             "Port": machine.get("port", ""),
-            "Environment": machine.get("environment", ""),
             "Status": machine.get("status", "").capitalize(),
             "_said": said,
         }

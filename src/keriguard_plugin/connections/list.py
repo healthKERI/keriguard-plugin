@@ -41,12 +41,12 @@ class ConnectionsListPage(QWidget):
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
         self.table = PaginatedTableWidget(
-            columns=["Peer 1", "Peer 2", "Connection Name", "Environment", "Bandwidth Class", "Status"],
+            columns=["Name", "SAID", "Peer 1", "Peer 2", "Status"],
             column_widths={
-                "Connection Name": 200,
-                "Environment": 110,
-                "Bandwidth Class": 120,
+                "Name": 180,
                 "Status": 90,
+                "Peer 1": 130,
+                "Peer 2": 130,
                 "Actions": 90,
             },
             title="Connections",
@@ -77,11 +77,10 @@ class ConnectionsListPage(QWidget):
 
     def _transform_connection_to_row(self, conn: dict[str, Any]) -> dict[str, Any]:
         return {
+            "Name": conn.get("connection_name", ""),
+            "SAID": conn.get("said", ""),
             "Peer 1": conn.get("peer1_name", ""),
             "Peer 2": conn.get("peer2_name", ""),
-            "Connection Name": conn.get("connection_name", ""),
-            "Environment": conn.get("environment", ""),
-            "Bandwidth Class": conn.get("bandwidth_class", ""),
             "Status": "Issued",
             "_said": conn.get("said", ""),
         }
@@ -119,8 +118,6 @@ class ConnectionsListPage(QWidget):
                         "peer1_name": self._get_peer_name(peer1.get("n", "")),
                         "peer2_name": self._get_peer_name(peer2.get("n", "")),
                         "connection_name": conn_meta.get("connectionName", ""),
-                        "environment": conn_meta.get("environment", ""),
-                        "bandwidth_class": conn_meta.get("bandwidthClass", ""),
                     }))
                 except Exception as exc:
                     logger.warning(f"Skipping connection credential {saider.qb64}: {exc}")

@@ -94,9 +94,6 @@ class ConnectionDetailPage(QWidget):
         if not icon.isNull():
             icon_label.setPixmap(icon.pixmap(80, 80))
         icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        icon_label.setStyleSheet(
-            f"background-color: {colors.BACKGROUND_HOVER}; border: 1px solid {colors.BORDER_FOCUS};"
-        )
         layout.addWidget(icon_label)
 
         info_col = QWidget()
@@ -172,6 +169,15 @@ class ConnectionDetailPage(QWidget):
 
         return section
 
+    def _thick_divider(self) -> QFrame:
+        div = QFrame()
+        div.setFrameShape(QFrame.Shape.HLine)
+        div.setStyleSheet(
+            f"background-color: {colors.BACKGROUND_NEUTRAL}; border: none;"
+        )
+        div.setFixedHeight(3)
+        return div
+
     def _create_peer_panel(self, panel_title: str) -> tuple[QWidget, dict]:
         panel = QWidget()
         layout = QVBoxLayout(panel)
@@ -179,9 +185,10 @@ class ConnectionDetailPage(QWidget):
         layout.setSpacing(0)
 
         header = QLabel(panel_title)
-        header.setStyleSheet("font-size: 14px; font-weight: 600; color: #555;")
+        header.setStyleSheet("font-size: 18px; font-weight: 700; color: #333;")
         layout.addWidget(header)
-        layout.addWidget(self._divider())
+        layout.addSpacing(10)
+        layout.addWidget(self._thick_divider())
 
         machine_row = EditableInfoRow("Machine", "—", "machine", editable=False)
         layout.addWidget(machine_row)
