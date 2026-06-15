@@ -40,29 +40,39 @@ class KERIGuardPlugin(PluginBase, AccountProviderPlugin):
     def _build_pages(self, app: "LocksmithApplication") -> None:
         from .machines.list import MachinesListPage
         from .machines.detail import MachineDetailPage
+        from .machines.issue import IssueInterfaceCredentialPage
         from .connections.list import ConnectionsListPage
         from .connections.detail import ConnectionDetailPage
+        from .connections.issue import IssueConnectionCredentialPage
         from .settings import KERIGuardSettingsPage
 
         machines_list = MachinesListPage(app, self.parent)
         machine_detail = MachineDetailPage(app, self.parent)
         connections_list = ConnectionsListPage(app, self.parent)
         connection_detail = ConnectionDetailPage(app, self.parent)
+        issue_interface = IssueInterfaceCredentialPage(app, self.parent)
+        issue_connection = IssueConnectionCredentialPage(app, self.parent)
 
         self._pages = {
             "keriguard_machines": machines_list,
             "keriguard_machine_detail": machine_detail,
             "keriguard_connections": connections_list,
             "keriguard_connection_detail": connection_detail,
+            "keriguard_issue_interface": issue_interface,
+            "keriguard_issue_connection": issue_connection,
             "keriguard_settings": KERIGuardSettingsPage(app, self.parent),
             "keriguard_placeholder": KERIGuardPlaceholderPage("KERIGuard", self.parent),
         }
 
         machines_list.view_machine.connect(self._on_view_machine)
+        machines_list.issue_clicked.connect(self._on_issue_interface)
         machine_detail.back_clicked.connect(self._on_back_to_machines)
         machine_detail.view_connection.connect(self._on_view_connection)
         connections_list.view_connection.connect(self._on_view_connection)
+        connections_list.issue_clicked.connect(self._on_issue_connection)
         connection_detail.back_clicked.connect(self._on_back_to_connections)
+        issue_interface.back_clicked.connect(self._on_back_to_machines)
+        issue_connection.back_clicked.connect(self._on_back_to_connections)
 
     def on_vault_opened(self, vault: "Vault") -> None:
         self._db = KERIGuardBaser(name=vault.hby.name, reopen=True)
@@ -126,6 +136,18 @@ class KERIGuardPlugin(PluginBase, AccountProviderPlugin):
     def _on_back_to_connections(self) -> None:
         self._navigate("keriguard_connections")
         page = self._pages.get("keriguard_connections")
+        if page and hasattr(page, "on_show"):
+            page.on_show()
+
+    def _on_issue_interface(self) -> None:
+        self._navigate("keriguard_issue_interface")
+        page = self._pages.get("keriguard_issue_interface")
+        if page and hasattr(page, "on_show"):
+            page.on_show()
+
+    def _on_issue_connection(self) -> None:
+        self._navigate("keriguard_issue_connection")
+        page = self._pages.get("keriguard_issue_connection")
         if page and hasattr(page, "on_show"):
             page.on_show()
 

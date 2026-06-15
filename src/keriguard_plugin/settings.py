@@ -5,11 +5,12 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from PySide6.QtWidgets import QLabel
+from PySide6.QtWidgets import QLabel, QHBoxLayout, QFileDialog
 
 from locksmith.ui import colors
 from locksmith.ui.toolkit.widgets.page import LocksmithFormPage
 from locksmith.ui.toolkit.widgets.fields import FloatingLabelComboBox, FloatingLabelLineEdit
+from locksmith.ui.toolkit.widgets.buttons import LocksmithInvertedButton, LocksmithIconButton
 
 from .db.basing import KERIGuardSettings
 
@@ -34,6 +35,7 @@ class KERIGuardSettingsPage(LocksmithFormPage):
     def _build_content(self):
         self._build_registry_section()
         self._build_registrar_url_section()
+        self._build_export_dir_section()
         self.content_layout.addStretch()
 
 
@@ -41,6 +43,7 @@ class KERIGuardSettingsPage(LocksmithFormPage):
         header = QLabel("Credential Registry")
         header.setStyleSheet("font-weight: 600; font-size: 16px;")
         self.content_layout.addWidget(header)
+        self.content_layout.addSpacing(8)
 
         hint = QLabel(
             "Select the KERI registry that scopes all KERIGuard credentials. "
@@ -49,7 +52,7 @@ class KERIGuardSettingsPage(LocksmithFormPage):
         hint.setStyleSheet(f"color: {colors.TEXT_SUBTLE}; font-size: 13px;")
         hint.setWordWrap(True)
         self.content_layout.addWidget(hint)
-        self.content_layout.addSpacing(8)
+        self.content_layout.addSpacing(10)
 
         self._registry_dropdown = FloatingLabelComboBox("Registry")
         self._registry_dropdown.setFixedWidth(420)
@@ -62,6 +65,7 @@ class KERIGuardSettingsPage(LocksmithFormPage):
         header = QLabel("Registrar URL")
         header.setStyleSheet("font-weight: 600; font-size: 16px;")
         self.content_layout.addWidget(header)
+        self.content_layout.addSpacing(8)
 
         hint = QLabel(
             "URL of the KERIGuard registrar service. After issuing a credential, "
@@ -70,7 +74,7 @@ class KERIGuardSettingsPage(LocksmithFormPage):
         hint.setStyleSheet(f"color: {colors.TEXT_SUBTLE}; font-size: 13px;")
         hint.setWordWrap(True)
         self.content_layout.addWidget(hint)
-        self.content_layout.addSpacing(8)
+        self.content_layout.addSpacing(10)
 
         self._registrar_url_field = FloatingLabelLineEdit("Registrar URL")
         self._registrar_url_field.setFixedWidth(420)
@@ -78,6 +82,54 @@ class KERIGuardSettingsPage(LocksmithFormPage):
             self._on_registrar_url_changed
         )
         self.content_layout.addWidget(self._registrar_url_field)
+
+    def _build_export_dir_section(self):
+        self.content_layout.addSpacing(24)
+
+        header = QLabel("Export Directory")
+        header.setStyleSheet("font-weight: 600; font-size: 16px;")
+        self.content_layout.addWidget(header)
+        self.content_layout.addSpacing(8)
+
+        hint = QLabel(
+            "When set, exported .cesr grant files are written here automatically. "
+            "Leave blank to choose a location each time via the Export action."
+        )
+        hint.setStyleSheet(f"color: {colors.TEXT_SUBTLE}; font-size: 13px;")
+        hint.setWordWrap(True)
+        self.content_layout.addWidget(hint)
+        self.content_layout.addSpacing(10)
+
+        row = QHBoxLayout()
+        row.setSpacing(8)
+
+        self._export_dir_field = FloatingLabelLineEdit("Export Directory")
+        self._export_dir_field.setFixedWidth(375)
+        self._export_dir_field.line_edit.editingFinished.connect(
+            self._on_export_dir_changed
+        )
+        row.addWidget(self._export_dir_field)
+
+        browse_btn = LocksmithIconButton(":/assets/material-icons/browse.svg", tooltip="Browse files")
+        browse_btn.setFixedHeight(48)
+        browse_btn.setFixedWidth(48)
+        browse_btn.clicked.connect(self._browse_export_dir)
+        row.addWidget(browse_btn)
+
+        row.addStretch()
+        self.content_layout.addLayout(row)
+
+    def _browse_export_dir(self) -> None:
+        current = self._export_dir_field.text().strip()
+        chosen = QFileDialog.getExistingDirectory(
+            self,
+            "Select Export Directory",
+            current or "",
+        )
+        if chosen:
+            self._export_dir_field.setText(chosen)
+            self._save_settings(export_dir=chosen)
+            logger.info(f"KERIGuard export directory selected: {chosen!r}")
 
     def _get_settings(self) -> KERIGuardSettings | None:
         if not self.app or not self.app.vault:
@@ -89,6 +141,7 @@ class KERIGuardSettingsPage(LocksmithFormPage):
             self,
             registry_name: str | None = None,
             registrar_url: str | None = None,
+            export_dir: str | None = None,
     ) -> None:
         if not self.app or not self.app.vault:
             return
@@ -100,6 +153,8 @@ class KERIGuardSettingsPage(LocksmithFormPage):
             existing.registry_name = registry_name
         if registrar_url is not None:
             existing.registrar_url = registrar_url
+        if export_dir is not None:
+            existing.export_dir = export_dir
         kg_db.keriguardSettings.pin(keys=("settings",), val=existing)
 
     def _load_settings(self) -> None:
@@ -124,6 +179,10 @@ class KERIGuardSettingsPage(LocksmithFormPage):
             settings.registrar_url if settings else ""
         )
 
+        self._export_dir_field.setText(
+            settings.export_dir if settings else ""
+        )
+
     def _on_registry_changed(self, text: str) -> None:
         self._save_settings(registry_name=text)
         logger.info(f"KERIGuard registry selected: {text!r}")
@@ -132,6 +191,11 @@ class KERIGuardSettingsPage(LocksmithFormPage):
         url = self._registrar_url_field.text().strip()
         self._save_settings(registrar_url=url)
         logger.info(f"KERIGuard registrar URL saved: {url!r}")
+
+    def _on_export_dir_changed(self) -> None:
+        path = self._export_dir_field.text().strip()
+        self._save_settings(export_dir=path)
+        logger.info(f"KERIGuard export directory saved: {path!r}")
 
     def on_show(self) -> None:
         self._load_settings()

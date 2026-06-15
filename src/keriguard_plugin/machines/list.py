@@ -1,14 +1,16 @@
 # -*- encoding: utf-8 -*-
 """keriguard.machines.list — Machines list page."""
+from pathlib import Path
 from typing import Dict, Any, TYPE_CHECKING
 
 from PySide6.QtCore import Signal
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QSizePolicy
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QSizePolicy, QFileDialog, QMessageBox
 from PySide6.QtGui import QPalette, QColor
 from keri import help
 
 from locksmith.ui import colors
 from locksmith.ui.toolkit.tables import PaginatedTableWidget
+from keriguard.core.kering import Issuer
 from keriguard.core.wireguarding import Schema
 
 if TYPE_CHECKING:
@@ -20,6 +22,7 @@ logger = help.ogler.getLogger(__name__)
 class MachinesListPage(QWidget):
     """Paginated list of KERIGuard machines."""
     view_machine = Signal(str)  # emits interface credential SAID when View is triggered
+    issue_clicked = Signal()
 
     def __init__(self, app, parent: "VaultPage | None" = None):
         super().__init__(parent)
@@ -45,9 +48,13 @@ class MachinesListPage(QWidget):
             column_widths={"Name": 180, "Address": 130, "Port": 65, "Status": 90, "Actions": 90},
             title="Machines",
             icon_path=":/assets/material-icons/devices.svg",
-            show_add_button=False,
-            row_actions=["View"],
-            row_action_icons={"View": ":/assets/material-icons/visibility.svg"},
+            show_add_button=True,
+            add_button_text="Issue Credential",
+            row_actions=["View", "Export"],
+            row_action_icons={
+                "View": ":/assets/material-icons/visibility.svg",
+                "Export": ":/assets/material-icons/export.svg",
+            },
             items_per_page=10,
             show_search=True,
             parent=self,
@@ -56,6 +63,7 @@ class MachinesListPage(QWidget):
         layout.addWidget(self.table)
         self.table.row_action_triggered.connect(self._on_row_action)
         self.table.row_clicked.connect(self._on_row_clicked)
+        self.table.add_clicked.connect(self.issue_clicked.emit)
 
     def _transform_machine_to_row(self, machine: dict[str, Any]) -> dict[str, Any]:
         said = machine.get("said", "")
@@ -120,6 +128,52 @@ class MachinesListPage(QWidget):
             said = row_data.get("_said", "")
             if said:
                 self.view_machine.emit(said)
+        elif action == "Export":
+            self._export_credential(row_data)
+
+    def _export_credential(self, row_data: Dict[str, Any]) -> None:
+        said = row_data.get("_said", "")
+        if not said or not self.app or not self.app.vault:
+            return
+
+        machine = self._machines_cache.get(said, {})
+        iface_name = machine.get("name") or row_data.get("Name") or said[:12]
+        default_filename = f"{iface_name}.cesr"
+
+        kg_db = self.app.vault.plugin_state.get("keriguard", {}).get("db")
+        settings = kg_db.keriguardSettings.get(keys=("settings",)) if kg_db else None
+        start_dir = (settings.export_dir if settings and settings.export_dir else "") or str(Path.home())
+
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Export Interface Credential",
+            str(Path(start_dir) / default_filename),
+            "CESR Files (*.cesr);;All Files (*)",
+        )
+        if not path:
+            return
+
+        try:
+            hby = self.app.vault.hby
+            rgy = self.app.vault.rgy
+            creder, *_ = rgy.reger.cloneCred(said=said)
+            issuer_pre = creder.sad.get("i", "")
+            hab = hby.habByPre(issuer_pre)
+            if hab is None:
+                QMessageBox.warning(
+                    self,
+                    "Export Failed",
+                    "Cannot export: issuing identifier not found in this vault.",
+                )
+                return
+            issuer = Issuer(hby=hby, hab=hab, rgy=rgy)
+            recipient_aid = creder.attrib.get("i", "")
+            grant = issuer.grant(said, recipient_aid)
+            Path(path).write_bytes(bytes(grant))
+            logger.info(f"Interface credential {said} exported to {path}")
+        except Exception as exc:
+            logger.exception(f"Export failed for {said}: {exc}")
+            QMessageBox.warning(self, "Export Failed", f"Could not export credential:\n{exc}")
                 
     def set_vault_name(self, vault_name: str):
         self.vault_name = vault_name

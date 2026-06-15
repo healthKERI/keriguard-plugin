@@ -162,15 +162,15 @@ class MachineDetailPage(QWidget):
         layout.addWidget(self.environment_row)
         layout.addWidget(self._divider())
 
+        self.status_row = EditableInfoRow("Status", "Issued", "status", editable=False)
+        layout.addWidget(self.status_row)
+        layout.addWidget(self._divider())
+
         # Description — editable, saved locally to KERIGuardBaser
         self.description_row = EditableInfoRow("Description", "—", "description", editable=True)
         self.description_row.value_label.setWordWrap(True)
         self.description_row.value_changed.connect(self._on_description_changed)
         layout.addWidget(self.description_row)
-        layout.addWidget(self._divider())
-
-        self.status_row = EditableInfoRow("Status", "Issued", "status", editable=False)
-        layout.addWidget(self.status_row)
         layout.addWidget(self._divider())
 
         return section
