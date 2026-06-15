@@ -13,6 +13,7 @@ from keri import help
 from locksmith.ui import colors
 from locksmith.ui.toolkit.widgets.buttons import LocksmithCopyButton, BackButton
 from locksmith.ui.vault.healthKERI.profile.widgets import EditableInfoRow
+from ..db.basing import KERIGuardConnectionNote, KERIGuardMachineNote
 
 if TYPE_CHECKING:
     from locksmith.core.apping import LocksmithApplication
@@ -117,7 +118,7 @@ class ConnectionDetailPage(QWidget):
     def _create_credential_section(self) -> QWidget:
         section = QWidget()
         layout = QVBoxLayout(section)
-        layout.setContentsMargins(0, 16, 0, 0)
+        layout.setContentsMargins(15, 16, 0, 0)
         layout.setSpacing(0)
 
         # SAID — hand-built row with copy button
@@ -127,7 +128,7 @@ class ConnectionDetailPage(QWidget):
         said_layout.setSpacing(16)
 
         said_lbl = QLabel("SAID")
-        said_lbl.setFixedWidth(120)
+        said_lbl.setFixedWidth(135)
         said_lbl.setStyleSheet("font-size: 14px; font-weight: 600; color: #555;")
         said_layout.addWidget(said_lbl)
 
@@ -143,28 +144,35 @@ class ConnectionDetailPage(QWidget):
         layout.addWidget(said_row)
         layout.addWidget(self._divider())
 
-        self.conn_name_row = EditableInfoRow("Connection Name", "—", "connection_name", editable=False)
-        layout.addWidget(self.conn_name_row)
+        self.conn_name_row = self._create_info_row("Connection Name")
+        layout.addWidget(self.conn_name_row[0])
         layout.addWidget(self._divider())
 
-        self.purpose_row = EditableInfoRow("Purpose", "—", "purpose", editable=False)
-        layout.addWidget(self.purpose_row)
+        self.purpose_row = self._create_info_row("Purpose")
+        layout.addWidget(self.purpose_row[0])
         layout.addWidget(self._divider())
 
-        self.environment_row = EditableInfoRow("Environment", "—", "environment", editable=False)
-        layout.addWidget(self.environment_row)
+        self.environment_row = self._create_info_row("Environment")
+        layout.addWidget(self.environment_row[0])
         layout.addWidget(self._divider())
 
-        self.bandwidth_row = EditableInfoRow("Bandwidth Class", "—", "bandwidth_class", editable=False)
-        layout.addWidget(self.bandwidth_row)
+        self.bandwidth_row = self._create_info_row("Bandwidth Class")
+        layout.addWidget(self.bandwidth_row[0])
         layout.addWidget(self._divider())
 
-        self.issued_row = EditableInfoRow("Issued Date", "—", "issued_date", editable=False)
-        layout.addWidget(self.issued_row)
+        self.issued_row = self._create_info_row("Issued Date")
+        layout.addWidget(self.issued_row[0])
         layout.addWidget(self._divider())
 
-        self.status_row = EditableInfoRow("Status", "Issued", "status", editable=False)
-        layout.addWidget(self.status_row)
+        self.status_row = self._create_info_row("Status", default_value="Issued")
+        layout.addWidget(self.status_row[0])
+        layout.addWidget(self._divider())
+
+        self.description_row = EditableInfoRow("Description", "—", "description", editable=True)
+        self.description_row.value_label.setWordWrap(True)
+        self.description_row.label_widget.setFixedWidth(135)
+        self.description_row.value_changed.connect(self._on_connection_description_changed)
+        layout.addWidget(self.description_row)
         layout.addWidget(self._divider())
 
         return section
@@ -181,7 +189,7 @@ class ConnectionDetailPage(QWidget):
     def _create_peer_panel(self, panel_title: str) -> tuple[QWidget, dict]:
         panel = QWidget()
         layout = QVBoxLayout(panel)
-        layout.setContentsMargins(0, 40, 0, 0)
+        layout.setContentsMargins(15, 40, 0, 0)
         layout.setSpacing(0)
 
         header = QLabel(panel_title)
@@ -190,39 +198,62 @@ class ConnectionDetailPage(QWidget):
         layout.addSpacing(10)
         layout.addWidget(self._thick_divider())
 
-        machine_row = EditableInfoRow("Machine", "—", "machine", editable=False)
-        layout.addWidget(machine_row)
+        machine_row = self._create_info_row("Machine")
+        layout.addWidget(machine_row[0])
         layout.addWidget(self._divider())
 
         endpoint_widget, endpoint_value, endpoint_copy = self._create_copyable_row("Endpoint")
-        layout.addWidget(endpoint_widget)
-        layout.addWidget(self._divider())
+        endpoint_div = self._divider()
+        endpoint_container = self._optional_container(endpoint_widget, endpoint_div)
+        layout.addWidget(endpoint_container)
 
         allowed_ips_widget, allowed_ips_value, allowed_ips_copy = self._create_copyable_row("Allowed IPs")
         layout.addWidget(allowed_ips_widget)
         layout.addWidget(self._divider())
 
-        peer_name_row = EditableInfoRow("Peer Name", "—", "peer_name", editable=False)
-        layout.addWidget(peer_name_row)
-        layout.addWidget(self._divider())
+        peer_name_row = self._create_info_row("Peer Name")
+        peer_name_div = self._divider()
+        peer_name_container = self._optional_container(peer_name_row[0], peer_name_div)
+        layout.addWidget(peer_name_container)
 
-        keepalive_row = EditableInfoRow("Keepalive", "—", "keepalive", editable=False)
-        layout.addWidget(keepalive_row)
-        layout.addWidget(self._divider())
+        keepalive_row = self._create_info_row("Keepalive")
+        keepalive_div = self._divider()
+        keepalive_container = self._optional_container(keepalive_row[0], keepalive_div)
+        layout.addWidget(keepalive_container)
+
+        description_row = EditableInfoRow("Description", "—", "description", editable=True)
+        description_row.value_label.setWordWrap(True)
+        description_row.label_widget.setFixedWidth(135)
+        layout.addWidget(description_row)
+        layout.addWidget(self._thick_divider())
 
         widgets = {
             "machine_row": machine_row,
+            "endpoint_container": endpoint_container,
             "endpoint_widget": endpoint_widget,
             "endpoint_value": endpoint_value,
             "endpoint_copy": endpoint_copy,
             "allowed_ips_widget": allowed_ips_widget,
             "allowed_ips_value": allowed_ips_value,
             "allowed_ips_copy": allowed_ips_copy,
+            "peer_name_container": peer_name_container,
             "peer_name_row": peer_name_row,
+            "keepalive_container": keepalive_container,
             "keepalive_row": keepalive_row,
+            "description_row": description_row,
         }
 
         return panel, widgets
+
+    def _optional_container(self, row_widget: QWidget, divider: QFrame) -> QWidget:
+        """Wrap a row and its divider so both hide/show together."""
+        container = QWidget()
+        container_layout = QVBoxLayout(container)
+        container_layout.setContentsMargins(0, 0, 0, 0)
+        container_layout.setSpacing(0)
+        container_layout.addWidget(row_widget)
+        container_layout.addWidget(divider)
+        return container
 
     def _create_copyable_row(self, label_text: str) -> tuple:
         row = QWidget()
@@ -231,7 +262,7 @@ class ConnectionDetailPage(QWidget):
         row_layout.setSpacing(16)
 
         label = QLabel(label_text)
-        label.setFixedWidth(120)
+        label.setFixedWidth(135)
         label.setStyleSheet("font-size: 14px; font-weight: 600; color: #555;")
         row_layout.addWidget(label)
 
@@ -243,6 +274,24 @@ class ConnectionDetailPage(QWidget):
         row_layout.addWidget(copy_btn)
 
         return row, value_label, copy_btn
+
+    def _create_info_row(self, label_text: str, default_value: str = "—") -> tuple:
+        """Create a simple label + value row (no copy button)."""
+        row = QWidget()
+        row_layout = QHBoxLayout(row)
+        row_layout.setContentsMargins(0, 15, 0, 15)
+        row_layout.setSpacing(16)
+
+        label = QLabel(label_text)
+        label.setFixedWidth(135)
+        label.setStyleSheet("font-size: 14px; font-weight: 600; color: #555;")
+        row_layout.addWidget(label)
+
+        value_label = QLabel(default_value)
+        value_label.setStyleSheet("font-size: 14px; color: #333;")
+        row_layout.addWidget(value_label, 1)
+
+        return row, value_label
 
     def _divider(self) -> QFrame:
         div = QFrame()
@@ -283,21 +332,27 @@ class ConnectionDetailPage(QWidget):
         self.said_value.setText(creder.said)
         self._said_copy_btn._copy_content = creder.said
 
-        self.conn_name_row.set_value(conn_name)
-        self.purpose_row.set_value(conn_meta.get("purpose", "") or "—")
-        self.environment_row.set_value(conn_meta.get("environment", "") or "—")
-        self.bandwidth_row.set_value(conn_meta.get("bandwidthClass", "") or "—")
-        self.issued_row.set_value(creder.attrib.get("dt", "") or "—")
-        self.status_row.set_value("Issued")
+        self.conn_name_row[1].setText(conn_name)
+        self.purpose_row[1].setText(conn_meta.get("purpose", "") or "—")
+        self.environment_row[1].setText(conn_meta.get("environment", "") or "—")
+        self.bandwidth_row[1].setText(conn_meta.get("bandwidthClass", "") or "—")
+        self.issued_row[1].setText(creder.attrib.get("dt", "") or "—")
+        self.status_row[1].setText("Issued")
+
+        kg_db = self.app.vault.plugin_state.get("keriguard", {}).get("db")
+        conn_note = kg_db.keriguardConnectionNotes.get(keys=(creder.said,)) if kg_db else None
+        self.description_row.set_value(conn_note.description if conn_note else "—")
 
         self._populate_peer_panel(self._peer1_widgets, peer1)
         self._populate_peer_panel(self._peer2_widgets, peer2)
 
+    # ... existing code ...
     def _populate_peer_panel(self, widgets: dict, peer_block: dict) -> None:
-        widgets["machine_row"].set_value(self._get_peer_name(peer_block.get("n", "")))
+        interface_said = peer_block.get("n", "")
+        widgets["machine_row"][1].setText(self._get_peer_name(interface_said))
 
         endpoint = peer_block.get("endpoint", "")
-        widgets["endpoint_widget"].setVisible(bool(endpoint))
+        widgets["endpoint_container"].setVisible(bool(endpoint))
         if endpoint:
             widgets["endpoint_value"].setText(endpoint)
             widgets["endpoint_copy"]._copy_content = endpoint
@@ -308,14 +363,50 @@ class ConnectionDetailPage(QWidget):
         widgets["allowed_ips_copy"]._copy_content = ", ".join(allowed_ips_list)
 
         peer_name = peer_block.get("peerName", "")
-        widgets["peer_name_row"].setVisible(bool(peer_name))
+        widgets["peer_name_container"].setVisible(bool(peer_name))
         if peer_name:
-            widgets["peer_name_row"].set_value(peer_name)
+            widgets["peer_name_row"][1].setText(peer_name)
 
         keepalive = peer_block.get("persistentKeepalive")
-        widgets["keepalive_row"].setVisible(keepalive is not None)
+        widgets["keepalive_container"].setVisible(keepalive is not None)
         if keepalive is not None:
-            widgets["keepalive_row"].set_value(f"{keepalive}s")
+            widgets["keepalive_row"][1].setText(f"{keepalive}s")
+
+        kg_db = self.app.vault.plugin_state.get("keriguard", {}).get("db")
+        machine_note = kg_db.keriguardMachineNotes.get(keys=(interface_said,)) if kg_db else None
+        desc_row = widgets["description_row"]
+        desc_row.set_value(machine_note.description if machine_note else "—")
+        try:
+            desc_row.value_changed.disconnect()
+        except RuntimeError:
+            pass
+        desc_row.value_changed.connect(
+            lambda _field, val, said=interface_said: self._on_machine_description_changed(said, val)
+        )
+
+    def _on_connection_description_changed(self, field_name: str, new_value: str) -> None:
+        if not self._current_said or not self.app or not self.app.vault:
+            return
+        kg_db = self.app.vault.plugin_state.get("keriguard", {}).get("db")
+        if kg_db is None:
+            return
+        kg_db.keriguardConnectionNotes.pin(
+            keys=(self._current_said,),
+            val=KERIGuardConnectionNote(description=new_value),
+        )
+        logger.info(f"Connection {self._current_said[:8]}…: description saved locally")
+
+    def _on_machine_description_changed(self, interface_said: str, new_value: str) -> None:
+        if not self.app or not self.app.vault:
+            return
+        kg_db = self.app.vault.plugin_state.get("keriguard", {}).get("db")
+        if kg_db is None:
+            return
+        kg_db.keriguardMachineNotes.pin(
+            keys=(interface_said,),
+            val=KERIGuardMachineNote(description=new_value),
+        )
+        logger.info(f"Machine {interface_said[:8]}…: description saved via connection detail")
 
     def _get_peer_name(self, interface_said: str) -> str:
         if not interface_said or not self.app or not self.app.vault:

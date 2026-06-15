@@ -1,14 +1,16 @@
 # -*- encoding: utf-8 -*-
 """keriguard.connections.list — Connections list page."""
+from pathlib import Path
 from typing import Dict, Any, TYPE_CHECKING
 
 from PySide6.QtCore import Signal
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QSizePolicy
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QSizePolicy, QFileDialog, QMessageBox
 from PySide6.QtGui import QPalette, QColor
 from keri import help
 
 from locksmith.ui import colors
 from locksmith.ui.toolkit.tables import PaginatedTableWidget
+from keriguard.core.kering import Issuer
 from keriguard.core.wireguarding import Schema
 
 if TYPE_CHECKING:
@@ -21,12 +23,14 @@ class ConnectionsListPage(QWidget):
     """Paginated list of KERIGuard connections."""
 
     view_connection = Signal(str)  # emits connection credential SAID
+    issue_clicked = Signal()
 
     def __init__(self, app, parent: "VaultPage | None" = None):
         super().__init__(parent)
         self._parent = parent
         self.app = app
         self.vault_name = ""
+        self._connections_cache: dict[str, dict[str, Any]] = {}
         self._setup_ui()
 
     def _setup_ui(self):
@@ -51,9 +55,13 @@ class ConnectionsListPage(QWidget):
             },
             title="Connections",
             icon_path=":/assets/material-icons/airline_stops.svg",
-            show_add_button=False,
-            row_actions=["View"],
-            row_action_icons={"View": ":/assets/material-icons/visibility.svg"},
+            show_add_button=True,
+            add_button_text="Issue Credential",
+            row_actions=["View", "Export"],
+            row_action_icons={
+                "View": ":/assets/material-icons/visibility.svg",
+                "Export": ":/assets/material-icons/export.svg",
+            },
             items_per_page=10,
             show_search=True,
             parent=self,
@@ -62,6 +70,7 @@ class ConnectionsListPage(QWidget):
         layout.addWidget(self.table)
         self.table.row_action_triggered.connect(self._on_row_action)
         self.table.row_clicked.connect(self._on_row_clicked)
+        self.table.add_clicked.connect(self.issue_clicked.emit)
 
     def _get_peer_name(self, interface_said: str) -> str:
         if not interface_said or not self.app or not self.app.vault:
@@ -76,13 +85,15 @@ class ConnectionsListPage(QWidget):
             return interface_said
 
     def _transform_connection_to_row(self, conn: dict[str, Any]) -> dict[str, Any]:
+        said = conn.get("said", "")
+        self._connections_cache[said] = conn
         return {
             "Name": conn.get("connection_name", ""),
-            "SAID": conn.get("said", ""),
+            "SAID": said,
             "Peer 1": conn.get("peer1_name", ""),
             "Peer 2": conn.get("peer2_name", ""),
             "Status": "Issued",
-            "_said": conn.get("said", ""),
+            "_said": said,
         }
 
     def _load_rows(self) -> list[dict[str, Any]]:
@@ -136,9 +147,56 @@ class ConnectionsListPage(QWidget):
             said = row_data.get("_said", "")
             if said:
                 self.view_connection.emit(said)
+        elif action == "Export":
+            self._export_credential(row_data)
+
+    def _export_credential(self, row_data: Dict[str, Any]) -> None:
+        said = row_data.get("_said", "")
+        if not said or not self.app or not self.app.vault:
+            return
+
+        conn = self._connections_cache.get(said, {})
+        conn_name = conn.get("connection_name") or row_data.get("Name") or said[:12]
+        default_filename = f"{conn_name}.cesr"
+
+        kg_db = self.app.vault.plugin_state.get("keriguard", {}).get("db")
+        settings = kg_db.keriguardSettings.get(keys=("settings",)) if kg_db else None
+        start_dir = (settings.export_dir if settings and settings.export_dir else "") or str(Path.home())
+
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Export Connection Credential",
+            str(Path(start_dir) / default_filename),
+            "CESR Files (*.cesr);;All Files (*)",
+        )
+        if not path:
+            return
+
+        try:
+            hby = self.app.vault.hby
+            rgy = self.app.vault.rgy
+            creder, *_ = rgy.reger.cloneCred(said=said)
+            issuer_pre = creder.sad.get("i", "")
+            hab = hby.habByPre(issuer_pre)
+            if hab is None:
+                QMessageBox.warning(
+                    self,
+                    "Export Failed",
+                    "Cannot export: issuing identifier not found in this vault.",
+                )
+                return
+            issuer = Issuer(hby=hby, hab=hab, rgy=rgy)
+            recipient_aid = creder.attrib.get("i", "")
+            grant = issuer.grant(said, recipient_aid)
+            Path(path).write_bytes(bytes(grant))
+            logger.info(f"Connection credential {said} exported to {path}")
+        except Exception as exc:
+            logger.exception(f"Export failed for {said}: {exc}")
+            QMessageBox.warning(self, "Export Failed", f"Could not export credential:\n{exc}")
 
     def set_vault_name(self, vault_name: str) -> None:
         self.vault_name = vault_name
 
     def on_show(self) -> None:
+        self._connections_cache.clear()
         self.table.set_static_data(self._load_rows())

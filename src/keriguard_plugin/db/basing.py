@@ -47,11 +47,18 @@ class KERIGuardSettings:
     """Persisted settings for the KERIGuard plugin."""
     registry_name: str = ""
     registrar_url: str = ""
+    export_dir: str = ""
 
 
 @dataclass
 class KERIGuardMachineNote:
     """Local user-editable note stored against a machine's interface credential SAID."""
+    description: str = ""
+
+
+@dataclass
+class KERIGuardConnectionNote:
+    """Local user-editable note stored against a connection credential SAID."""
     description: str = ""
 
 
@@ -66,6 +73,7 @@ class KERIGuardBaser(dbing.LMDBer):
         self.keriguardTeams = None
         self.keriguardSettings = None
         self.keriguardMachineNotes = None
+        self.keriguardConnectionNotes = None
         super(KERIGuardBaser, self).__init__(name=name, headDirPath=headDirPath, reopen=reopen, **kwa)
 
     def reopen(self, **kwa):
@@ -81,6 +89,9 @@ class KERIGuardBaser(dbing.LMDBer):
         )
         self.keriguardMachineNotes = koming.Komer(
             db=self, subkey='kgMachineNotes.', schema=KERIGuardMachineNote, seperator='>'
+        )
+        self.keriguardConnectionNotes = koming.Komer(
+            db=self, subkey='kgConnectionNotes.', schema=KERIGuardConnectionNote, seperator='>'
         )
         return self.env
 
