@@ -1,5 +1,5 @@
 # -*- encoding: utf-8 -*-
-"""keriguard_plugin.core.kering — Plugin-level credential issuance helpers."""
+"""keriguard_admin.core.kering — Plugin-level credential issuance helpers."""
 import asyncio
 from datetime import datetime, UTC
 

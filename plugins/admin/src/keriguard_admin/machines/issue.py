@@ -18,7 +18,11 @@ from locksmith.ui.toolkit.widgets.buttons import LocksmithButton, LocksmithInver
 from locksmith.ui.toolkit.widgets.fields import FloatingLabelLineEdit, FloatingLabelComboBox
 
 from keriguard.core.kering import Issuer
-from ..core.remoting import push_credential_to_registrar, push_introduction_to_registrar
+from ..core.remoting import (
+    push_credential_to_registrar,
+    push_credential_via_essr,
+    push_introduction_to_registrar,
+)
 
 if TYPE_CHECKING:
     from locksmith.ui.vault.page import VaultPage
@@ -349,6 +353,7 @@ class IssueInterfaceCredentialPage(LocksmithFormPage):
 
             kg_db = self.app.vault.plugin_state.get("keriguard", {}).get("db")
             settings = kg_db.keriguardSettings.get(keys=("settings",)) if kg_db else None
+            essr = self.app.vault.plugin_state.get("keriguard", {}).get("essr")
 
             creder = await issuer.issue_interface_credential(
                 recipient=recipient_aid,
@@ -358,23 +363,32 @@ class IssueInterfaceCredentialPage(LocksmithFormPage):
                 auths={},
             )
 
-            if settings and settings.registrar_url:
-                grant = issuer.grant(creder.said, recipient_aid)
-                await push_credential_to_registrar(bytes(grant), settings.registrar_url)
-                if recipient_oobi:
-                    data = dict(
-                        aid=recipient_aid,
-                        alias=recipient_alias,
-                        oobi=recipient_oobi,
-                    )
-                    exn, end = exchanging.exchange(
-                        route="/introduction",
-                        payload=data,
-                        sender=hab.pre,
-                        date=helping.nowIso8601(),
-                    )
-                    introduction = hab.endorse(serder=exn, last=False, pipelined=False)
-                    await push_introduction_to_registrar(bytes(introduction), settings.registrar_url)
+            grant = issuer.grant(creder.said, recipient_aid)
+            grant_bytes = bytes(grant)
+
+            introduction_bytes = None
+            if recipient_oobi:
+                intro_data = dict(
+                    aid=recipient_aid,
+                    alias=recipient_alias,
+                    oobi=recipient_oobi,
+                )
+                exn, end = exchanging.exchange(
+                    route="/introduction",
+                    payload=intro_data,
+                    sender=hab.pre,
+                    date=helping.nowIso8601(),
+                )
+                introduction_bytes = bytes(hab.endorse(serder=exn, last=False, pipelined=False))
+
+            publish_mode = settings.publish_mode if settings else "registrar"
+
+            if publish_mode == "hkweb" and essr:
+                await push_credential_via_essr(grant_bytes, essr, introduction_bytes)
+            elif settings and settings.registrar_url:
+                await push_credential_to_registrar(grant_bytes, settings.registrar_url)
+                if introduction_bytes:
+                    await push_introduction_to_registrar(introduction_bytes, settings.registrar_url)
 
             if hasattr(self.app.vault, 'signals') and self.app.vault.signals:
                 self.app.vault.signals.emit_doer_event(
