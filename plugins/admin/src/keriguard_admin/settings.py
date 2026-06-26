@@ -35,6 +35,7 @@ class KERIGuardSettingsPage(LocksmithFormPage):
     def _build_content(self):
         self._build_registry_section()
         self._build_registrar_url_section()
+        self._build_publish_mode_section()
         self._build_export_dir_section()
         self.content_layout.addStretch()
 
@@ -82,6 +83,30 @@ class KERIGuardSettingsPage(LocksmithFormPage):
             self._on_registrar_url_changed
         )
         self.content_layout.addWidget(self._registrar_url_field)
+
+    def _build_publish_mode_section(self):
+        self.content_layout.addSpacing(24)
+
+        header = QLabel("Publish Mode")
+        header.setStyleSheet("font-weight: 600; font-size: 16px;")
+        self.content_layout.addWidget(header)
+        self.content_layout.addSpacing(8)
+
+        hint = QLabel(
+            'Where issued credentials are published. '
+            'Use "registrar" for self-hosted deployments and "hkweb" for SaaS mode.'
+        )
+        hint.setStyleSheet(f"color: {colors.TEXT_SUBTLE}; font-size: 13px;")
+        hint.setWordWrap(True)
+        self.content_layout.addWidget(hint)
+        self.content_layout.addSpacing(10)
+
+        self._publish_mode_dropdown = FloatingLabelComboBox("Publish Mode")
+        self._publish_mode_dropdown.setFixedWidth(420)
+        for mode in ["registrar", "hkweb"]:
+            self._publish_mode_dropdown.addItem(mode)
+        self._publish_mode_dropdown.currentTextChanged.connect(self._on_publish_mode_changed)
+        self.content_layout.addWidget(self._publish_mode_dropdown)
 
     def _build_export_dir_section(self):
         self.content_layout.addSpacing(24)
@@ -142,6 +167,7 @@ class KERIGuardSettingsPage(LocksmithFormPage):
             registry_name: str | None = None,
             registrar_url: str | None = None,
             export_dir: str | None = None,
+            publish_mode: str | None = None,
     ) -> None:
         if not self.app or not self.app.vault:
             return
@@ -155,6 +181,8 @@ class KERIGuardSettingsPage(LocksmithFormPage):
             existing.registrar_url = registrar_url
         if export_dir is not None:
             existing.export_dir = export_dir
+        if publish_mode is not None:
+            existing.publish_mode = publish_mode
         kg_db.keriguardSettings.pin(keys=("settings",), val=existing)
 
     def _load_settings(self) -> None:
@@ -179,6 +207,14 @@ class KERIGuardSettingsPage(LocksmithFormPage):
             settings.registrar_url if settings else ""
         )
 
+        self._publish_mode_dropdown.combo_box.blockSignals(True)
+        try:
+            mode = settings.publish_mode if settings else "registrar"
+            idx = self._publish_mode_dropdown.findText(mode)
+            self._publish_mode_dropdown.setCurrentIndex(idx if idx >= 0 else 0)
+        finally:
+            self._publish_mode_dropdown.combo_box.blockSignals(False)
+
         self._export_dir_field.setText(
             settings.export_dir if settings else ""
         )
@@ -191,6 +227,10 @@ class KERIGuardSettingsPage(LocksmithFormPage):
         url = self._registrar_url_field.text().strip()
         self._save_settings(registrar_url=url)
         logger.info(f"KERIGuard registrar URL saved: {url!r}")
+
+    def _on_publish_mode_changed(self, text: str) -> None:
+        self._save_settings(publish_mode=text)
+        logger.info(f"KERIGuard publish mode saved: {text!r}")
 
     def _on_export_dir_changed(self) -> None:
         path = self._export_dir_field.text().strip()

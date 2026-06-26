@@ -1,5 +1,5 @@
 # -*- encoding: utf-8 -*-
-"""keriguard.plugin — KERIGuardPlugin for the Locksmith application."""
+"""keriguard_admin.plugin — KERIGuardAdminPlugin for the Locksmith application."""
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
@@ -22,7 +22,7 @@ if TYPE_CHECKING:
 logger = help.ogler.getLogger(__name__)
 
 
-class KERIGuardPlugin(PluginBase, AccountProviderPlugin):
+class KERIGuardAdminPlugin(PluginBase, AccountProviderPlugin):
     """Locksmith plugin for the KERIGuard platform."""
 
     @property
@@ -80,10 +80,28 @@ class KERIGuardPlugin(PluginBase, AccountProviderPlugin):
         _, account = next(self._db.keriguardAccounts.getItemIter(), (None, None))
         _, team = next(self._db.keriguardTeams.getItemIter(), (None, None))
 
+        essr = None
+        if account:
+            try:
+                from kept.hk.configing import HealthKERIConfig
+                from kept.hk.essring import APIClient
+                config = HealthKERIConfig.get_instance()
+                hab = vault.hby.habByName(account.alias)
+                if hab:
+                    essr = APIClient(
+                        url=config.protected_url,
+                        root=config.api_aid,
+                        hby=vault.hby,
+                        hab=hab,
+                    )
+            except Exception as e:
+                logger.warning(f"KERIGuard: could not initialise ESSR client: {e}")
+
         vault.plugin_state["keriguard"] = {
             "account": account,
             "team": team,
             "db": self._db,
+            "essr": essr,
         }
 
         if hasattr(vault, "signals") and vault.signals:

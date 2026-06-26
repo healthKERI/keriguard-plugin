@@ -1,38 +1,9 @@
-[build-system]
-requires = ["setuptools>=61.0", "wheel"]
-build-backend = "setuptools.build_meta"
-
-[project]
-name = "keriguard-plugin"
-version = "0.0.1"
-description = "KERIGuard plugin for Locksmith application."
-readme = "README.md"
-requires-python = ">=3.12.9"
-license = { text = "MIT" }
-
-authors = [
-    { name = "Ari Argoud", email = "ari@healthkeri.com" },
-]
-
-keywords = ["healthKERI", "cryptography", "KERI", "ACDC"]
-
-classifiers = [
-    "Programming Language :: Python :: 3.12",
-    "License :: OSI Approved :: MIT License",
-    "Operating System :: OS Independent",
-]
-
-dependencies = []
-
-[project.entry-points."locksmith.plugins"]
-keriguard = "keriguard_plugin.plugin:KERIGuardPlugin"
-
-[tool.setuptools.packages.find]
-where = ["src"]
-include = ["*"]
-
-[tool.setuptools.package-dir]
-"" = "src"
+# This repo contains two independently installable Locksmith plugins.
+#
+#   Admin plugin:   pip install -e admin/
+#   Client plugin:  pip install -e client/
+#
+# See admin/pyproject.toml and client/pyproject.toml for each package.
 
 [tool.pytest.ini_options]
-pythonpath = ["src", "."]
+pythonpath = ["."]
