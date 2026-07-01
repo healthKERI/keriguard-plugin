@@ -27,7 +27,7 @@ class KERIGuardAdminPlugin(PluginBase, AccountProviderPlugin):
 
     @property
     def plugin_id(self) -> str:
-        return "keriguard"
+        return "keriguard_admin"
 
     def initialize(self, app: "LocksmithApplication", parent) -> None:
         self._app = app
