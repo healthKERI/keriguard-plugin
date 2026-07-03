@@ -1,8 +1,9 @@
 # -*- encoding: utf-8 -*-
 """keriguard_user.connections.list — Connections list page (received connection credentials)."""
+import asyncio
 from typing import Dict, Any, TYPE_CHECKING
 
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Signal, QMetaObject, Qt, Q_ARG
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QSizePolicy
 from PySide6.QtGui import QPalette, QColor
 from keri import help
@@ -22,6 +23,7 @@ class ConnectionsListPage(QWidget):
 
     view_connection = Signal(str)
     import_clicked = Signal()
+    _status_ready = Signal()  # internal signal to update table from main thread
 
     def __init__(self, app, parent: "VaultPage | None" = None):
         super().__init__(parent)
@@ -29,6 +31,8 @@ class ConnectionsListPage(QWidget):
         self.app = app
         self.vault_name = ""
         self._connections_cache: dict[str, dict[str, Any]] = {}
+        self._pending_status_checks: list[tuple[str, str]] = []
+        self._status_ready.connect(self._apply_status_updates)
         self._setup_ui()
 
     def _setup_ui(self):
@@ -72,17 +76,17 @@ class ConnectionsListPage(QWidget):
         try:
             creder, *_ = self.app.vault.rgy.reger.cloneCred(said=interface_said)
             return (
-                creder.attrib.get("interfaceMetadata", {}).get("interfaceName", "")
-                or interface_said
+                    creder.attrib.get("interfaceMetadata", {}).get("interfaceName", "")
+                    or interface_said
             )
         except Exception:
             return interface_said
 
-    def _wg_status_for_conn(self, conn_said: str) -> str:
-        """Check WireGuard status for the local peer of this connection."""
+    def _resolve_local_iface_name(self, conn_said: str) -> str | None:
+        """Return the WireGuard interface name for the local peer, or None."""
         try:
             if not self.app or not self.app.vault:
-                return "Unknown"
+                return None
             rgy = self.app.vault.rgy
             conn_creder, *_ = rgy.reger.cloneCred(said=conn_said)
             edge_block = conn_creder.sad.get("e", {})
@@ -95,12 +99,10 @@ class ConnectionsListPage(QWidget):
                     continue
                 iface_creder, *_ = rgy.reger.cloneCred(said=iface_said)
                 if iface_creder.attrib.get("i") in user_aids:
-                    iface_name = iface_creder.attrib.get("interfaceMetadata", {}).get("interfaceName", "")
-                    from keriguard.core.systeming import _is_wireguard_up
-                    return "Active" if _is_wireguard_up(iface_name) else "Inactive"
+                    return iface_creder.attrib.get("interfaceMetadata", {}).get("interfaceName", "")
         except Exception:
             pass
-        return "Unknown"
+        return None
 
     def _transform_connection_to_row(self, conn: dict[str, Any]) -> dict[str, Any]:
         said = conn.get("said", "")
@@ -150,7 +152,7 @@ class ConnectionsListPage(QWidget):
                         "peer1_name": self._get_peer_name(peer1.get("n", "")),
                         "peer2_name": self._get_peer_name(peer2.get("n", "")),
                         "connection_name": conn_meta.get("connectionName", ""),
-                        "wg_status": self._wg_status_for_conn(creder.said),
+                        "wg_status": "Unknown",
                     }))
                 except Exception as exc:
                     logger.warning(f"Skipping connection {saider.qb64}: {exc}")
@@ -158,6 +160,44 @@ class ConnectionsListPage(QWidget):
             logger.exception(f"Error iterating connection credentials: {exc}")
 
         return rows
+
+    async def _check_statuses(self, conn_saids: list[str]) -> None:
+        """Resolve WireGuard status for each connection asynchronously."""
+        from keriguard.core.systeming import _is_wireguard_up
+
+        results: list[tuple[str, str]] = []
+        for conn_said in conn_saids:
+            iface_name = self._resolve_local_iface_name(conn_said)
+            if not iface_name:
+                continue
+            try:
+                is_up = await _is_wireguard_up(iface_name)
+                results.append((conn_said, "Active" if is_up else "Inactive"))
+            except Exception:
+                results.append((conn_said, "Unknown"))
+
+        self._pending_status_checks = results
+        self._status_ready.emit()
+
+    def _apply_status_updates(self) -> None:
+        """Called on the main thread when async status checks complete."""
+        if not self._pending_status_checks:
+            return
+
+        status_map = dict(self._pending_status_checks)
+        self._pending_status_checks = []
+
+        # Update the cached data
+        for said, status in status_map.items():
+            if said in self._connections_cache:
+                self._connections_cache[said]["wg_status"] = status
+
+        # Rebuild rows from cache with updated statuses
+        rows = [
+            self._transform_connection_to_row(conn)
+            for conn in self._connections_cache.values()
+        ]
+        self.table.set_static_data(rows)
 
     def _on_row_clicked(self, row_data: object) -> None:
         if isinstance(row_data, dict):
@@ -174,4 +214,14 @@ class ConnectionsListPage(QWidget):
 
     def on_show(self) -> None:
         self._connections_cache.clear()
-        self.table.set_static_data(self._load_rows())
+        rows = self._load_rows()
+        self.table.set_static_data(rows)
+
+        # Schedule async status resolution on the running event loop
+        conn_saids = [r["_said"] for r in rows if r.get("_said")]
+        if conn_saids:
+            try:
+                loop = asyncio.get_running_loop()
+                asyncio.ensure_future(self._check_statuses(conn_saids), loop=loop)
+            except RuntimeError:
+                logger.debug("No running event loop; skipping async status checks")

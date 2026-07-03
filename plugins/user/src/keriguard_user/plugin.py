@@ -131,24 +131,30 @@ class KERIGuardUserPlugin(PluginBase, AccountProviderPlugin):
             settings=settings,
             essr=essr,
         )
+
+        # Start the watcher first so its parser is available for peer OOBI resolution
+        # in WireGuardApplier._resolve_peer_aids.
+        self._start_watcher(vault, watcher_hab, settings)
+
+        registrar_url = (
+            settings.registrar_url
+            if settings.credential_source == "registrar"
+            else None
+        )
         self._applier = WireGuardApplier(
             hby=vault.hby,
             rgy=vault.rgy,
             kgb=self._kgb,
             config_dir=settings.config_dir,
             watcher_hab=watcher_hab,
+            registrar_url=registrar_url,
+            watcher=self._watcher,
         )
 
         vault.plugin_state["keriguard_user"]["applier"] = self._applier
 
-        # Embedded sentinel watcher — queries witnesses for the issuer's KEL,
-        # fetches any ixn anchor events passively, and clears TEL anchor escrow.
-        # Uses a separate SentinelBaser name to avoid LMDB path collision with
-        # the keriguard library's KERIGuardBaser (same TailDirPath "keri/hk").
-        self._start_watcher(vault, watcher_hab, settings)
-
         self._poll_task = asyncio.create_task(
-            self._polling_loop(vault, settings),
+            self._startup_and_poll(vault, settings),
             name="keriguard_user_poll",
         )
 
@@ -215,18 +221,64 @@ class KERIGuardUserPlugin(PluginBase, AccountProviderPlugin):
             logger.debug(f"KERIGuardUserPlugin: could not build ESSR client: {exc}")
         return None
 
-    async def _polling_loop(self, vault: "Vault", settings) -> None:
+    async def _startup_and_poll(self, vault: "Vault", settings) -> None:
+        """Unified credential-apply loop.
+
+        Tracks which SAIDs have been successfully applied so that:
+        - Credentials already in the registry at startup are picked up even
+          when the embedded sentinel loads them concurrently with this task.
+        - Transient failures ("error", "pending_oobi", "pending_sudo") are
+          retried on the next poll interval.
+        - Interface credentials are always applied before connection credentials
+          so the .conf file exists before a peer is appended to it.
+        """
+        from keriguard.core.wireguarding import Schema
+
+        _applied: set[str] = set()
+
         while True:
             try:
-                new_saids = await self._poller.poll_once(vault.hby)
-                for said in new_saids:
-                    await self._applier.apply(said)
-                if new_saids:
+                rgy = vault.rgy
+
+                # Collect everything in the registry, interfaces first.
+                iface_saids = [s.qb64 for s in (rgy.reger.schms.get(keys=Schema.INTERFACE_SCHEMA) or [])]
+                conn_saids = [s.qb64 for s in (rgy.reger.schms.get(keys=Schema.CONNECTION_SCHEMA) or [])]
+                ordered = iface_saids + conn_saids
+
+                # Also ask the registrar for any freshly pushed credentials.
+                try:
+                    new_saids = await self._poller.poll_once(vault.hby)
+                    for s in new_saids:
+                        if s not in ordered:
+                            ordered.append(s)
+                except Exception as exc:
+                    logger.warning(f"KERIGuardUserPlugin: poll error: {exc}")
+
+                pending = [s for s in ordered if s not in _applied]
+                if pending:
+                    logger.debug(
+                        f"KERIGuardUserPlugin: {len(pending)} credential(s) pending apply"
+                    )
+
+                refreshed = False
+                for said in pending:
+                    result = await self._applier.apply(said)
+                    if result == "applied":
+                        _applied.add(said)
+                        refreshed = True
+                    else:
+                        logger.debug(
+                            f"KERIGuardUserPlugin: apply {said[:16]}… → {result} (will retry)"
+                        )
+
+                if refreshed:
                     self._refresh_list_pages()
+
             except asyncio.CancelledError:
                 break
             except Exception as exc:
                 logger.warning(f"KERIGuardUserPlugin: polling error: {exc}")
+
             await asyncio.sleep(settings.poll_interval)
 
     def _refresh_list_pages(self) -> None:
@@ -271,7 +323,7 @@ class KERIGuardUserPlugin(PluginBase, AccountProviderPlugin):
         if self._app and self._app.vault:
             settings = self._db.keriguardUserSettings.get(keys=("settings",))
             if settings and settings.is_initialized:
-                self._start_polling(self.app.vault, settings)
+                self._start_polling(self._app.vault, settings)
         self._navigate("keriguard_user_machines")
         page = self._pages.get("keriguard_user_machines")
         if page and hasattr(page, "on_show"):

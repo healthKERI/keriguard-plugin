@@ -1,5 +1,6 @@
 # -*- encoding: utf-8 -*-
 """keriguard_user.machines.list — Machines list page (received interface credentials)."""
+import asyncio
 from typing import Dict, Any, TYPE_CHECKING
 
 from PySide6.QtCore import Signal

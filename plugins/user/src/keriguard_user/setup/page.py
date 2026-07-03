@@ -228,7 +228,10 @@ class SetupPage(LocksmithFormPage):
 
         hint = QLabel(
             "To allow WireGuard interfaces to be brought up automatically, add the "
-            "following to /etc/sudoers.d/wireguard-keriguard:"
+            "following to /etc/sudoers.d/wireguard-keriguard.\n"
+            "Note: the chown rule transfers config file ownership back to your user "
+            "after writing, so the process can read it back (wg-quick still works "
+            "as root regardless of ownership):"
         )
         hint.setWordWrap(True)
         hint.setStyleSheet(f"font-size: 13px; color: {colors.TEXT_SUBTLE};")
@@ -236,11 +239,18 @@ class SetupPage(LocksmithFormPage):
 
         wg_quick = shutil.which("wg-quick") or "/usr/local/bin/wg-quick"
         wg = shutil.which("wg") or "/usr/local/bin/wg"
+        _chown = shutil.which("chown") or "/usr/sbin/chown"
+        # sudoers note: '*' does NOT match '/' — wg-quick rules must specify the
+        # full config directory path so the wildcard only covers the filename.
         snippet = (
             f"# KERIGuard WireGuard access\n"
-            f"%admin ALL=(ALL) NOPASSWD: {wg_quick} up *\n"
-            f"%admin ALL=(ALL) NOPASSWD: {wg_quick} down *\n"
+            f"%admin ALL=(ALL) NOPASSWD: {wg_quick} up /usr/local/var/wireguard/keriguard/*\n"
+            f"%admin ALL=(ALL) NOPASSWD: {wg_quick} down /usr/local/var/wireguard/keriguard/*\n"
+            f"%admin ALL=(ALL) NOPASSWD: {wg_quick} strip /usr/local/var/wireguard/keriguard/*\n"
             f"%admin ALL=(ALL) NOPASSWD: {wg} show *\n"
+            f"%admin ALL=(ALL) NOPASSWD: {wg} syncconf * /dev/stdin\n"
+            f"%admin ALL=(ALL) NOPASSWD: /usr/bin/tee /usr/local/var/wireguard/keriguard/*\n"
+            f"%admin ALL=(ALL) NOPASSWD: {_chown} * /usr/local/var/wireguard/keriguard/*"
         )
         snippet_label = QLabel(snippet)
         snippet_label.setStyleSheet(
@@ -394,6 +404,8 @@ class SetupPage(LocksmithFormPage):
                     oobi=self._config.registrar.oobi,
                     keriguard_oobi=self._config.registrar.keriguard.oobi if self._config.registrar.keriguard else "",
                     url=registrar_url,
+                    ipaddress=self._config.registrar.keriguard.ipaddress if self._config.registrar.keriguard else None,
+                    endpoint=self._config.registrar.keriguard.endpoint if self._config.registrar.keriguard else None,
                 )
                 kgb.set_issuer(aid=issuer_aid, oobi=issuer_oobi)
 
