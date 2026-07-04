@@ -22,7 +22,10 @@ classifiers = [
     "Operating System :: OS Independent",
 ]
 
-dependencies = []
+dependencies = [
+    "keriguard @git+https://git@github.com/healthKERI/keriguard",
+    "sentinel @git+https://git@github.com/healthKERI/sentinel"
+]
 
 [project.entry-points."locksmith.plugins"]
 keriguard_user = "keriguard_user.plugin:KERIGuardUserPlugin"

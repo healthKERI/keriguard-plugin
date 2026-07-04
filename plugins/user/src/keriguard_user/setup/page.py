@@ -15,9 +15,9 @@ from PySide6.QtCore import Signal
 
 from locksmith.ui import colors
 from locksmith.ui.toolkit.widgets.page import LocksmithFormPage
-from locksmith.ui.toolkit.widgets.fields import FloatingLabelComboBox, FloatingLabelLineEdit
+from locksmith.ui.toolkit.widgets.fields import FloatingLabelComboBox, FloatingLabelLineEdit, LocksmithPlainTextEdit
 from locksmith.ui.toolkit.widgets.buttons import (
-    LocksmithButton, LocksmithInvertedButton, LocksmithIconButton,
+    LocksmithButton, LocksmithInvertedButton, LocksmithIconButton, LocksmithCopyButton
 )
 
 if TYPE_CHECKING:
@@ -140,9 +140,16 @@ class SetupPage(LocksmithFormPage):
         btn_row.addStretch()
         layout.addLayout(btn_row)
 
-        self._success_panel = self._build_success_panel()
-        self._success_panel.hide()
-        layout.addWidget(self._success_panel)
+        self._done_button = LocksmithButton("Go to Machines")
+        self._done_button.setFixedWidth(160)
+        self._done_button.clicked.connect(self.setup_complete.emit)
+        self._done_button.hide()
+
+        done_row = QHBoxLayout()
+        done_row.addStretch()
+        done_row.addWidget(self._done_button)
+        done_row.addStretch()
+        layout.addLayout(done_row)
 
         layout.addStretch()
 
@@ -222,9 +229,16 @@ class SetupPage(LocksmithFormPage):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(8)
 
+        # Top row: header + subheader on the left, copy button on the right
+        top_row = QHBoxLayout()
+        top_row.setContentsMargins(0, 0, 0, 0)
+        top_row.setSpacing(0)
+
+        header_col = QVBoxLayout()
+        header_col.setSpacing(6)
         header = QLabel("Sudoers Configuration")
         header.setStyleSheet("font-weight: 600; font-size: 16px;")
-        layout.addWidget(header)
+        header_col.addWidget(header)
 
         hint = QLabel(
             "To allow WireGuard interfaces to be brought up automatically, add the "
@@ -235,13 +249,14 @@ class SetupPage(LocksmithFormPage):
         )
         hint.setWordWrap(True)
         hint.setStyleSheet(f"font-size: 13px; color: {colors.TEXT_SUBTLE};")
-        layout.addWidget(hint)
+        hint.setFixedWidth(800)
+        header_col.addWidget(hint)
+
+        top_row.addLayout(header_col)
 
         wg_quick = shutil.which("wg-quick") or "/usr/local/bin/wg-quick"
         wg = shutil.which("wg") or "/usr/local/bin/wg"
         _chown = shutil.which("chown") or "/usr/sbin/chown"
-        # sudoers note: '*' does NOT match '/' — wg-quick rules must specify the
-        # full config directory path so the wildcard only covers the filename.
         snippet = (
             f"# KERIGuard WireGuard access\n"
             f"%admin ALL=(ALL) NOPASSWD: {wg_quick} up /usr/local/var/wireguard/keriguard/*\n"
@@ -252,39 +267,37 @@ class SetupPage(LocksmithFormPage):
             f"%admin ALL=(ALL) NOPASSWD: /usr/bin/tee /usr/local/var/wireguard/keriguard/*\n"
             f"%admin ALL=(ALL) NOPASSWD: {_chown} * /usr/local/var/wireguard/keriguard/*"
         )
-        snippet_label = QLabel(snippet)
-        snippet_label.setStyleSheet(
-            f"font-family: monospace; font-size: 12px; background: {colors.BACKGROUND_HOVER}; "
-            f"border: 1px solid {colors.BORDER}; border-radius: 4px; padding: 8px;"
+
+        self._sudoers_copy_button = LocksmithCopyButton(
+            copy_content=snippet,
+            tooltip="Copy sudoers snippet",
+            icon_size=24,
         )
-        snippet_label.setWordWrap(False)
-        layout.addWidget(snippet_label)
+        top_row.addSpacing(10)
+        top_row.addWidget(self._sudoers_copy_button)
+        top_row.addStretch()
+
+        layout.addLayout(top_row)
+
+        self._sudoers_snippet_edit = LocksmithPlainTextEdit()
+        self._sudoers_snippet_edit.setPlainText(snippet)
+        self._sudoers_snippet_edit.setReadOnly(True)
+        self._sudoers_snippet_edit._bg_color = "white"
+        self._sudoers_snippet_edit._update_styling()
+        # Size to fit content: count lines and set a reasonable fixed height
+        line_count = snippet.count("\n") + 1
+        self._sudoers_snippet_edit.setFixedHeight(max(line_count * 20 + 30, 100))
+        self._sudoers_snippet_edit.setFixedWidth(840)
+
+        snippet_row = QHBoxLayout()
+        snippet_row.setContentsMargins(0, 0, 0, 0)
+        snippet_row.addWidget(self._sudoers_snippet_edit)
+        snippet_row.addStretch()
+        layout.addLayout(snippet_row)
+        layout.addWidget(self._sudoers_snippet_edit)
 
         return section
 
-    def _build_success_panel(self) -> QWidget:
-        panel = QWidget()
-        layout = QVBoxLayout(panel)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(16)
-
-        msg = QLabel("KERIGuard user plugin initialized successfully.")
-        msg.setStyleSheet("font-size: 16px; font-weight: 600; color: #28a745;")
-        layout.addWidget(msg)
-
-        sub = QLabel(
-            "This vault will now automatically receive and apply WireGuard credentials "
-            "from the configured issuer."
-        )
-        sub.setWordWrap(True)
-        sub.setStyleSheet(f"font-size: 14px; color: {colors.TEXT_SUBTLE};")
-        layout.addWidget(sub)
-
-        done_btn = LocksmithButton("Go to Machines")
-        done_btn.setFixedWidth(160)
-        done_btn.clicked.connect(self.setup_complete.emit)
-        layout.addWidget(done_btn)
-        return panel
 
     # ------------------------------------------------------------------
     # Event handlers
@@ -444,9 +457,14 @@ class SetupPage(LocksmithFormPage):
         kg_user_db.keriguardUserSettings.pin(keys=("settings",), val=settings)
         vault.plugin_state["keriguard_user"]["settings"] = settings
 
-        # 6. Show success panel
-        self._hide_form()
-        self._success_panel.show()
+        # 6. Show success
+        self._init_button.hide()
+        self._done_button.show()
+        self.show_success(
+            "KERIGuard user plugin initialized successfully. "
+            "This vault will now automatically receive and apply WireGuard "
+            "credentials from the configured issuer."
+        )
         logger.info("SetupPage: KERIGuard user plugin initialized")
 
     async def _load_schemas(self, vault, loop):
@@ -495,11 +513,6 @@ class SetupPage(LocksmithFormPage):
                 logger.info(f"Schema {schema_said[:16]}… loaded from remote OOBI")
             except Exception as exc:
                 logger.warning(f"Remote schema load failed ({schema_said[:16]}…): {exc}")
-
-    def _hide_form(self):
-        self._init_button.hide()
-        self._summary_frame.hide()
-        self._sudoers_section.hide()
 
     def set_vault_name(self, vault_name):
         self.vault_name = vault_name

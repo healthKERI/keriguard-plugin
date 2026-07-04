@@ -186,7 +186,7 @@ class KERIGuardUserSettingsPage(LocksmithFormPage):
         self.content_layout.addWidget(hint)
         self.content_layout.addSpacing(10)
 
-        self._poll_interval_field = FloatingLabelLineEdit("Credential Poll Interval (seconds)")
+        self._poll_interval_field = FloatingLabelLineEdit("Credential Poll Interval")
         self._poll_interval_field.setFixedWidth(200)
         self._poll_interval_field.line_edit.editingFinished.connect(self._on_poll_interval_changed)
         self.content_layout.addWidget(self._poll_interval_field)
@@ -209,7 +209,7 @@ class KERIGuardUserSettingsPage(LocksmithFormPage):
         self.content_layout.addWidget(hint)
         self.content_layout.addSpacing(10)
 
-        self._kel_watch_interval_field = FloatingLabelLineEdit("KEL Watch Interval (seconds)")
+        self._kel_watch_interval_field = FloatingLabelLineEdit("KEL Watch Interval")
         self._kel_watch_interval_field.setFixedWidth(200)
         self._kel_watch_interval_field.line_edit.editingFinished.connect(self._on_kel_watch_interval_changed)
         self.content_layout.addWidget(self._kel_watch_interval_field)
