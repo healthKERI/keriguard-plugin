@@ -94,11 +94,6 @@ class MachineDetailPage(QWidget):
         if not icon.isNull():
             icon_label.setPixmap(icon.pixmap(80, 80))
         icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        icon_label.setStyleSheet(f"""                                                                                                                                                                                                                                                                          
-              background-color: {colors.BACKGROUND_HOVER};                                                                                                                                                                                                                                                       
-              border: 1px solid {colors.BORDER_FOCUS};                                                                                                                                                                                                                                                           
-              # border-radius: 40px;                                                                                                                                                                                                                                                                               
-          """)
         layout.addWidget(icon_label)
 
         info_col = QWidget()
