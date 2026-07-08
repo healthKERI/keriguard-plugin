@@ -3,9 +3,9 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "keriguard-admin"
+name = "keriguard-user"
 version = "0.0.1"
-description = "KERIGuard admin plugin for Locksmith application."
+description = "KERIGuard user plugin for Locksmith application."
 readme = "README.md"
 requires-python = ">=3.12.9"
 license = { text = "MIT" }
@@ -24,10 +24,11 @@ classifiers = [
 
 dependencies = [
     "keriguard @git+https://git@github.com/healthKERI/keriguard",
+    "sentinel @git+https://git@github.com/healthKERI/sentinel"
 ]
 
 [project.entry-points."locksmith.plugins"]
-keriguard_admin = "keriguard_admin.plugin:KERIGuardAdminPlugin"
+keriguard_user = "keriguard_user.plugin:KERIGuardUserPlugin"
 
 [tool.setuptools.packages.find]
 where = ["src"]

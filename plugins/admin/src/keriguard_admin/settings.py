@@ -94,7 +94,7 @@ class KERIGuardSettingsPage(LocksmithFormPage):
 
         hint = QLabel(
             'Where issued credentials are published. '
-            'Use "registrar" for self-hosted deployments and "hkweb" for SaaS mode.'
+            'Use "registrar" for self-hosted deployments and "healthKERI" for SaaS mode.'
         )
         hint.setStyleSheet(f"color: {colors.TEXT_SUBTLE}; font-size: 13px;")
         hint.setWordWrap(True)
@@ -103,7 +103,7 @@ class KERIGuardSettingsPage(LocksmithFormPage):
 
         self._publish_mode_dropdown = FloatingLabelComboBox("Publish Mode")
         self._publish_mode_dropdown.setFixedWidth(420)
-        for mode in ["registrar", "hkweb"]:
+        for mode in ["registrar", "healthKERI"]:
             self._publish_mode_dropdown.addItem(mode)
         self._publish_mode_dropdown.currentTextChanged.connect(self._on_publish_mode_changed)
         self.content_layout.addWidget(self._publish_mode_dropdown)

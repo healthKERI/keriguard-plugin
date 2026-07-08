@@ -1,5 +1,5 @@
-# -*- encoding: utf-8 -*-                                                                                                                                                                                                                                                                                      
-"""keriguard.machines.detail — Machine detail page."""
+# -*- encoding: utf-8 -*-
+"""keriguard_user.machines.detail — Machine detail page (received interface credential)."""
 from typing import Any, Dict, TYPE_CHECKING
 
 from PySide6.QtCore import Signal, Qt
@@ -12,10 +12,10 @@ from keri import help
 
 from locksmith.ui import colors
 from locksmith.ui.toolkit.tables import PaginatedTableWidget
-from locksmith.ui.toolkit.widgets import LocksmithButton
 from locksmith.ui.toolkit.widgets.buttons import LocksmithCopyButton, BackButton
 from locksmith.ui.vault.healthKERI.profile.widgets import EditableInfoRow
 from keriguard.core.wireguarding import Schema
+from .list import _wg_status
 from ..db.basing import KERIGuardMachineNote
 
 if TYPE_CHECKING:
@@ -24,11 +24,12 @@ if TYPE_CHECKING:
 
 logger = help.ogler.getLogger(__name__)
 
+
 class MachineDetailPage(QWidget):
-    """Detail view for a single KERIGuard machine (interface credential)."""
+    """Detail view for a received KERIGuard machine (interface credential)."""
 
     back_clicked = Signal()
-    view_connection = Signal(str)  # emits connection credential SAID
+    view_connection = Signal(str)
 
     def __init__(self, app: "LocksmithApplication", parent: "VaultPage | None" = None):
         super().__init__(parent)
@@ -54,12 +55,8 @@ class MachineDetailPage(QWidget):
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        scroll.setStyleSheet(
-            f"background-color: {colors.BACKGROUND_CONTENT}; border: none;"
-        )
-        scroll.viewport().setStyleSheet(
-            f"background-color: {colors.BACKGROUND_CONTENT};"
-        )
+        scroll.setStyleSheet(f"background-color: {colors.BACKGROUND_CONTENT}; border: none;")
+        scroll.viewport().setStyleSheet(f"background-color: {colors.BACKGROUND_CONTENT};")
 
         content = QWidget()
         content_layout = QVBoxLayout(content)
@@ -72,7 +69,6 @@ class MachineDetailPage(QWidget):
         back_btn.clicked.connect(self.back_clicked.emit)
         back_row.addStretch()
         back_row.addWidget(back_btn)
-
         content_layout.addLayout(back_row)
 
         content_layout.addWidget(self._create_header_section())
@@ -106,9 +102,7 @@ class MachineDetailPage(QWidget):
         info_layout.addWidget(self.name_label)
 
         self.aid_label = QLabel("—")
-        self.aid_label.setStyleSheet(
-            "font-size: 16px; font-family: monospace; color: #666;"
-        )
+        self.aid_label.setStyleSheet("font-size: 16px; font-family: monospace; color: #666;")
         info_layout.addWidget(self.aid_label)
 
         layout.addWidget(info_col, 1)
@@ -120,35 +114,26 @@ class MachineDetailPage(QWidget):
         layout.setContentsMargins(0, 16, 0, 0)
         layout.setSpacing(0)
 
-        # SAID — hand-built row: monospace value + copy button
         said_row = QWidget()
         said_layout = QHBoxLayout(said_row)
         said_layout.setContentsMargins(0, 15, 0, 15)
         said_layout.setSpacing(16)
-
-        said_label = QLabel("SAID")
-        said_label.setFixedWidth(120)
-        said_label.setStyleSheet("font-size: 14px; font-weight: 600; color: #555;")
-        said_layout.addWidget(said_label)
-
+        said_lbl = QLabel("SAID")
+        said_lbl.setFixedWidth(120)
+        said_lbl.setStyleSheet("font-size: 14px; font-weight: 600; color: #555;")
+        said_layout.addWidget(said_lbl)
         self.said_value = QLabel("—")
-        self.said_value.setStyleSheet(
-            "font-size: 14px; font-family: monospace; color: #333;"
-        )
+        self.said_value.setStyleSheet("font-size: 14px; font-family: monospace; color: #333;")
         said_layout.addWidget(self.said_value, 1)
-
         self._said_copy_btn = LocksmithCopyButton(copy_content="")
         said_layout.addWidget(self._said_copy_btn)
-
         layout.addWidget(said_row)
         layout.addWidget(self._divider())
 
-        # Address — copyable read-only row
         addr_widget, self._address_value, self._address_copy_btn = self._create_copyable_row("Address")
         layout.addWidget(addr_widget)
         layout.addWidget(self._divider())
 
-        # Port — copyable read-only row
         port_widget, self._port_value, self._port_copy_btn = self._create_copyable_row("Port")
         layout.addWidget(port_widget)
         layout.addWidget(self._divider())
@@ -157,11 +142,10 @@ class MachineDetailPage(QWidget):
         layout.addWidget(self.environment_row)
         layout.addWidget(self._divider())
 
-        self.status_row = EditableInfoRow("Status", "Issued", "status", editable=False)
-        layout.addWidget(self.status_row)
+        self.wg_status_row = EditableInfoRow("WireGuard Status", "Unknown", "wg_status", editable=False)
+        layout.addWidget(self.wg_status_row)
         layout.addWidget(self._divider())
 
-        # Description — editable, saved locally to KERIGuardBaser
         self.description_row = EditableInfoRow("Description", "—", "description", editable=True)
         self.description_row.value_label.setWordWrap(True)
         self.description_row.value_changed.connect(self._on_description_changed)
@@ -177,16 +161,12 @@ class MachineDetailPage(QWidget):
         layout.setSpacing(0)
 
         self.connections_table = PaginatedTableWidget(
-            columns=[
-                "Connected Machine", "Endpoint", "Allowed IPs",
-                "Connection Name", "Environment", "Status",
-            ],
+            columns=["Connected Machine", "Endpoint", "Allowed IPs", "Connection Name", "Environment"],
             column_widths={
                 "Connected Machine": 180,
                 "Endpoint": 160,
                 "Allowed IPs": 160,
                 "Environment": 110,
-                "Status": 80,
             },
             title="Peer Connections",
             icon_path=":/assets/material-icons/airline_stops.svg",
@@ -205,49 +185,40 @@ class MachineDetailPage(QWidget):
     def _divider(self) -> QFrame:
         div = QFrame()
         div.setFrameShape(QFrame.Shape.HLine)
-        div.setStyleSheet(
-            f"background-color: {colors.BACKGROUND_NEUTRAL}; border: none;"
-        )
+        div.setStyleSheet(f"background-color: {colors.BACKGROUND_NEUTRAL}; border: none;")
         div.setFixedHeight(1)
         return div
 
     def _create_copyable_row(self, label_text: str) -> tuple:
-        """Return (widget, value_label, copy_btn) for a read-only row with a copy button."""
         row = QWidget()
         row_layout = QHBoxLayout(row)
         row_layout.setContentsMargins(0, 15, 0, 15)
         row_layout.setSpacing(16)
-
         label = QLabel(label_text)
         label.setFixedWidth(120)
         label.setStyleSheet("font-size: 14px; font-weight: 600; color: #555;")
         row_layout.addWidget(label)
-
         value_label = QLabel("—")
         value_label.setStyleSheet("font-size: 14px; color: #333;")
         row_layout.addWidget(value_label, 1)
-
         copy_btn = LocksmithCopyButton(copy_content="")
         row_layout.addWidget(copy_btn)
-
         return row, value_label, copy_btn
 
     def _on_description_changed(self, field_name: str, new_value: str) -> None:
         if not self._current_said or not self.app or not self.app.vault:
             return
-        kg_db = self.app.vault.plugin_state.get("keriguard", {}).get("db")
-        if kg_db is None:
+        db = self.app.vault.plugin_state.get("keriguard_user", {}).get("db")
+        if db is None:
             return
-        kg_db.keriguardMachineNotes.pin(
+        db.keriguardMachineNotes.pin(
             keys=(self._current_said,),
             val=KERIGuardMachineNote(description=new_value),
         )
-        logger.info(f"Machine {self._current_said[:8]}…: description saved locally")
 
     def _on_connection_row_clicked(self, row_data: object) -> None:
         if isinstance(row_data, dict):
-            data: Dict[str, Any] = {str(k): v for k, v in row_data.items()}
-            self._on_connection_action(data, "View")
+            self._on_connection_action({str(k): v for k, v in row_data.items()}, "View")
 
     def _on_connection_action(self, row_data: dict, action: str) -> None:
         if action == "View":
@@ -266,18 +237,18 @@ class MachineDetailPage(QWidget):
         try:
             creder, *_ = self.app.vault.rgy.reger.cloneCred(said=self._current_said)
         except Exception as exc:
-            logger.warning(f"MachineDetailPage: could not load credential {self._current_said}: {exc}")
+            logger.warning(f"MachineDetailPage: could not load {self._current_said}: {exc}")
             return
 
         payload = creder.attrib
         iface = payload.get("interface", {})
         meta = payload.get("interfaceMetadata", {})
+        iface_name = meta.get("interfaceName", "") or "—"
 
-        self.name_label.setText(meta.get("interfaceName", "") or "—")
+        self.name_label.setText(iface_name)
         self.aid_label.setText(payload.get("i", "") or "—")
-
         self.said_value.setText(creder.said)
-        self._said_copy_btn._copy_content = creder.said  # update in-place; _copy_content is the backing attr
+        self._said_copy_btn._copy_content = creder.said
 
         address_str = ", ".join(iface.get("address", [])) or "—"
         self._address_value.setText(address_str)
@@ -288,14 +259,11 @@ class MachineDetailPage(QWidget):
         self._port_copy_btn._copy_content = port_str
 
         self.environment_row.set_value(meta.get("environment", "") or "—")
+        self.wg_status_row.set_value(_wg_status(meta.get("interfaceName", "")))
 
-        kg_db = self.app.vault.plugin_state.get("keriguard", {}).get("db")
-        note = kg_db.keriguardMachineNotes.get(keys=(creder.said,)) if kg_db else None
-        description = note.description if note else meta.get("description", "")
-        self.description_row.set_value(description or "—")
-
-        self.status_row.set_value("Issued")
-
+        db = self.app.vault.plugin_state.get("keriguard_user", {}).get("db")
+        note = db.keriguardMachineNotes.get(keys=(creder.said,)) if db else None
+        self.description_row.set_value(note.description if note else (meta.get("description", "") or "—"))
 
     def _load_connections(self) -> None:
         if not self._current_said or not self.app or not self.app.vault:
@@ -303,24 +271,12 @@ class MachineDetailPage(QWidget):
             return
 
         rgy = self.app.vault.rgy
-
-        # Determine the registry this machine belongs to so we can scope connections.
-        try:
-            iface_creder, *_ = rgy.reger.cloneCred(said=self._current_said)
-            registry_regk = iface_creder.regi
-        except Exception as exc:
-            logger.warning(f"MachineDetailPage: could not resolve registry for {self._current_said}: {exc}")
-            self.connections_table.set_static_data([])
-            return
-
         rows: list[dict[str, Any]] = []
+
         try:
             for saider in (rgy.reger.schms.get(keys=Schema.CONNECTION_SCHEMA) or []):
                 try:
                     conn_creder, *_ = rgy.reger.cloneCred(said=saider.qb64)
-                    if conn_creder.regi != registry_regk:
-                        continue
-
                     edge_block = conn_creder.sad.get("e", {})
                     peer1 = edge_block.get("peer1", {})
                     peer2 = edge_block.get("peer2", {})
@@ -339,11 +295,10 @@ class MachineDetailPage(QWidget):
                         "Allowed IPs": ", ".join(other_block.get("allowedIps", [])),
                         "Connection Name": conn_meta.get("connectionName", ""),
                         "Environment": conn_meta.get("environment", ""),
-                        "Status": "Issued",
                         "_conn_said": conn_creder.said,
                     })
                 except Exception as exc:
-                    logger.warning(f"Skipping connection credential {saider.qb64}: {exc}")
+                    logger.warning(f"Skipping connection {saider.qb64}: {exc}")
         except Exception as exc:
             logger.exception(f"Error loading connections for {self._current_said}: {exc}")
 
@@ -355,8 +310,8 @@ class MachineDetailPage(QWidget):
         try:
             creder, *_ = self.app.vault.rgy.reger.cloneCred(said=interface_said)
             return (
-                    creder.attrib.get("interfaceMetadata", {}).get("interfaceName", "")
-                    or interface_said
+                creder.attrib.get("interfaceMetadata", {}).get("interfaceName", "")
+                or interface_said
             )
         except Exception:
             return interface_said
