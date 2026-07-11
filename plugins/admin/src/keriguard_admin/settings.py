@@ -2,8 +2,7 @@
 """keriguard.settings — KERIGuard plugin settings page."""
 from __future__ import annotations
 
-import logging
-from pathlib import Path
+from keri import help
 from typing import TYPE_CHECKING
 
 from PySide6.QtWidgets import QLabel, QHBoxLayout, QFileDialog
@@ -19,7 +18,8 @@ if TYPE_CHECKING:
     from locksmith.core.apping import LocksmithApplication
     from locksmith.ui.vault.page import VaultPage
 
-logger = logging.getLogger(__name__)
+logger = help.ogler.getLogger(__name__)
+
 
 class KERIGuardSettingsPage(LocksmithFormPage):
 

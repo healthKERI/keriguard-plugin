@@ -45,10 +45,12 @@ class KERIGuardTeam:
 @dataclass
 class KERIGuardSettings:
     """Persisted settings for the KERIGuard plugin."""
-    registry_name: str = ""
+
+    publish_mode: str = "registrar"  # "registrar" | "service_provider"
+    issuer_aid: str = ""
     registrar_url: str = ""
+    registrar_aid: str = ""
     export_dir: str = ""
-    publish_mode: str = "registrar"  # "registrar" | "healthKERI"
 
 
 @dataclass

@@ -44,6 +44,7 @@ class KERIGuardAdminPlugin(PluginBase, AccountProviderPlugin):
         from .connections.detail import ConnectionDetailPage
         from .connections.issue import IssueConnectionCredentialPage
         from .settings import KERIGuardSettingsPage
+        from .setup import KERIGuardAdminSetupPage
 
         machines_list = MachinesListPage(app, self.parent)
         machine_detail = MachineDetailPage(app, self.parent)
@@ -51,6 +52,7 @@ class KERIGuardAdminPlugin(PluginBase, AccountProviderPlugin):
         connection_detail = ConnectionDetailPage(app, self.parent)
         issue_interface = IssueInterfaceCredentialPage(app, self.parent)
         issue_connection = IssueConnectionCredentialPage(app, self.parent)
+        keriguard_setup = KERIGuardAdminSetupPage(app, self.parent)
 
         self._pages = {
             "keriguard_machines": machines_list,
@@ -59,6 +61,7 @@ class KERIGuardAdminPlugin(PluginBase, AccountProviderPlugin):
             "keriguard_connection_detail": connection_detail,
             "keriguard_issue_interface": issue_interface,
             "keriguard_issue_connection": issue_connection,
+            "keriguard_setup": keriguard_setup,
             "keriguard_settings": KERIGuardSettingsPage(app, self.parent),
             "keriguard_placeholder": KERIGuardPlaceholderPage("KERIGuard", self.parent),
         }
@@ -72,6 +75,11 @@ class KERIGuardAdminPlugin(PluginBase, AccountProviderPlugin):
         connection_detail.back_clicked.connect(self._on_back_to_connections)
         issue_interface.back_clicked.connect(self._on_back_to_machines)
         issue_connection.back_clicked.connect(self._on_back_to_connections)
+
+        keriguard_setup.setup_complete_clicked.connect(
+            lambda: self._navigate("keriguard_machines")
+        )
+
 
     def on_vault_opened(self, vault: "Vault") -> None:
         self._db = KERIGuardBaser(name=vault.hby.name, reopen=True)
@@ -95,6 +103,8 @@ class KERIGuardAdminPlugin(PluginBase, AccountProviderPlugin):
                     )
             except Exception as e:
                 logger.warning(f"KERIGuard: could not initialise ESSR client: {e}")
+
+
 
         vault.plugin_state["keriguard"] = {
             "account": account,
@@ -159,7 +169,7 @@ class KERIGuardAdminPlugin(PluginBase, AccountProviderPlugin):
     def _build_menu(self) -> None:
         self._account_button = MenuButton(
             QIcon(":/assets/custom/logos/keriguard-darkmode.png"),
-            "KERIGuard Admin"
+            "KERIGuard VPN"
         )
         self._account_button.is_account_btn = True
         self._keriguard_submenu_items = self._create_submenu_items()
@@ -251,11 +261,27 @@ class KERIGuardAdminPlugin(PluginBase, AccountProviderPlugin):
     def get_pages(self) -> dict[str, QWidget]:
         return self._pages
 
+    # -------------------------------------------------------------------------
+    # AccountProviderPlugin
+    # -------------------------------------------------------------------------
+
     def is_setup_complete(self, vault: "Vault") -> bool:
-        return True
+        kg_db = self._app.vault.plugin_state.get("keriguard", {}).get("db")
+        settings = kg_db.keriguardSettings.get(keys=("settings",)) if kg_db else None
+        logger.info(f"KERIGuard setup complete: {settings}")
+        return settings is not None and settings.issuer_aid is not None
 
     def get_setup_page(self, vault: "Vault") -> tuple[str, bool]:
-        return ("keriguard_machines", True)
+        kg_db = self._app.vault.plugin_state.get("keriguard", {}).get("db")
+        settings = kg_db.keriguardSettings.get(keys=("settings",)) if kg_db else None
+        if settings is None or settings.issuer_aid is None:
+            page = self._pages.get("keriguard_setup")
+            if page and hasattr(page, "on_show"):
+                page.on_show()
+            return "keriguard_setup", False
+        else:
+            return "keriguard_machines", True
+
 
 
 class KERIGuardPlaceholderPage(QWidget):

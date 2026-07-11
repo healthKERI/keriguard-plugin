@@ -55,7 +55,7 @@ class IssueInterfaceCredentialPage(LocksmithFormPage):
     # ------------------------------------------------------------------
 
     def _setup_ui(self):
-        cl = self.content_layout
+        content_layout = self.content_layout
 
         # Top description
         desc = QLabel(
@@ -65,76 +65,76 @@ class IssueInterfaceCredentialPage(LocksmithFormPage):
         )
         desc.setWordWrap(True)
         desc.setStyleSheet(f"font-size: 15px; color: {colors.TEXT_SUBTLE};")
-        cl.addWidget(desc)
-        cl.addSpacing(40)
+        content_layout.addWidget(desc)
+        content_layout.addSpacing(40)
 
         # --- Section 1: Machine ---
-        cl.addWidget(self._section_header("Select Machine"))
-        cl.addSpacing(10)
+        content_layout.addWidget(self._section_header("Select Machine"))
+        content_layout.addSpacing(10)
         sub1 = QLabel(
             "The machine that will receive this credential. Must be a resolved KERI "
             "contact or a local identifier."
         )
         sub1.setWordWrap(True)
         sub1.setStyleSheet(f"font-size: 13px; color: {colors.TEXT_SUBTLE}; font-weight: 200;")
-        cl.addWidget(sub1)
-        cl.addSpacing(10)
+        content_layout.addWidget(sub1)
+        content_layout.addSpacing(10)
 
         self._recipient_dropdown = FloatingLabelComboBox("Recipient Machine")
         self._recipient_dropdown.setFixedWidth(500)
-        cl.addWidget(self._recipient_dropdown)
-        cl.addSpacing(10)
+        content_layout.addWidget(self._recipient_dropdown)
+        content_layout.addSpacing(10)
 
         self._issuer_dropdown = FloatingLabelComboBox("Issuing Identifier")
         self._issuer_dropdown.setFixedWidth(500)
-        cl.addWidget(self._issuer_dropdown)
-        cl.addSpacing(40)
+        content_layout.addWidget(self._issuer_dropdown)
+        content_layout.addSpacing(40)
 
         # --- Section 2: Interface Configuration ---
-        cl.addWidget(self._section_header("Interface Configuration"))
-        cl.addSpacing(10)
+        content_layout.addWidget(self._section_header("Interface Configuration"))
+        content_layout.addSpacing(10)
         sub2 = QLabel("WireGuard interface parameters for this machine's VPN interface.")
         sub2.setWordWrap(True)
         sub2.setStyleSheet(f"font-size: 13px; color: {colors.TEXT_SUBTLE}; font-weight: 200;")
-        cl.addWidget(sub2)
-        cl.addSpacing(10)
+        content_layout.addWidget(sub2)
+        content_layout.addSpacing(10)
 
         self._iface_name = FloatingLabelLineEdit("Interface Name")
         self._iface_name.setFixedWidth(500)
-        cl.addWidget(self._iface_name)
-        cl.addSpacing(8)
+        content_layout.addWidget(self._iface_name)
+        content_layout.addSpacing(8)
 
         self._listen_port = FloatingLabelLineEdit("Listen Port")
         self._listen_port.setFixedWidth(500)
-        cl.addWidget(self._listen_port)
-        cl.addSpacing(8)
+        content_layout.addWidget(self._listen_port)
+        content_layout.addSpacing(8)
 
         self._address = FloatingLabelLineEdit("Address (CIDR)")
         self._address.setFixedWidth(500)
-        cl.addWidget(self._address)
-        cl.addSpacing(40)
+        content_layout.addWidget(self._address)
+        content_layout.addSpacing(40)
 
         # --- Section 3: Metadata ---
-        cl.addWidget(self._section_header("Metadata"))
-        cl.addSpacing(10)
+        content_layout.addWidget(self._section_header("Metadata"))
+        content_layout.addSpacing(10)
         sub3 = QLabel("Optional labels attached to the credential.")
         sub3.setWordWrap(True)
         sub3.setStyleSheet(f"font-size: 13px; color: {colors.TEXT_SUBTLE}; font-weight: 200;")
-        cl.addWidget(sub3)
-        cl.addSpacing(10)
+        content_layout.addWidget(sub3)
+        content_layout.addSpacing(10)
 
         self._description = FloatingLabelLineEdit("Description")
         self._description.setFixedWidth(500)
-        cl.addWidget(self._description)
-        cl.addSpacing(8)
+        content_layout.addWidget(self._description)
+        content_layout.addSpacing(8)
 
         self._environment = FloatingLabelComboBox("Environment")
         self._environment.setFixedWidth(500)
         for env in ["", "production", "staging", "development", "test"]:
             self._environment.addItem(env)
         self._environment.setCurrentIndex(0)
-        cl.addWidget(self._environment)
-        cl.addSpacing(20)
+        content_layout.addWidget(self._environment)
+        content_layout.addSpacing(20)
 
         # --- Advanced section ---
         self._advanced_toggle = QPushButton("▶ Advanced options")
@@ -144,7 +144,7 @@ class IssueInterfaceCredentialPage(LocksmithFormPage):
         )
         self._advanced_toggle.setCursor(self._advanced_toggle.cursor())
         self._advanced_toggle.clicked.connect(self._toggle_advanced)
-        cl.addWidget(self._advanced_toggle)
+        content_layout.addWidget(self._advanced_toggle)
 
         self._advanced_widget = QWidget()
         adv_layout = QVBoxLayout(self._advanced_widget)
@@ -164,8 +164,8 @@ class IssueInterfaceCredentialPage(LocksmithFormPage):
         adv_layout.addWidget(self._table)
 
         self._advanced_widget.setVisible(False)
-        cl.addWidget(self._advanced_widget)
-        cl.addSpacing(40)
+        content_layout.addWidget(self._advanced_widget)
+        content_layout.addSpacing(40)
 
         # --- Button row ---
         btn_row = QHBoxLayout()
@@ -180,9 +180,9 @@ class IssueInterfaceCredentialPage(LocksmithFormPage):
         self._issue_btn.clicked.connect(self._on_issue_clicked)
         btn_row.addWidget(self._issue_btn)
         btn_row.addStretch()
-        cl.addLayout(btn_row)
+        content_layout.addLayout(btn_row)
 
-        cl.addStretch()
+        content_layout.addStretch()
 
     def _section_header(self, text: str) -> QLabel:
         label = QLabel(text)
