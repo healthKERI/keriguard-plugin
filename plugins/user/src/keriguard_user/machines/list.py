@@ -101,8 +101,6 @@ class MachinesListPage(QWidget):
             for saider in (rgy.reger.schms.get(keys=Schema.INTERFACE_SCHEMA) or []):
                 try:
                     creder, *_ = rgy.reger.cloneCred(said=saider.qb64)
-                    if creder.attrib.get("i") not in user_aids:
-                        continue
                     payload = creder.attrib
                     iface = payload.get("interface", {})
                     meta = payload.get("interfaceMetadata", {})

@@ -68,6 +68,7 @@ class ImportConnectionCredentialPage(LocksmithFormPage):
         row.setSpacing(8)
         self._file_field = FloatingLabelLineEdit("Credential File (.cesr)")
         self._file_field.setFixedWidth(375)
+        self._file_field.line_edit.textChanged.connect(self._on_file_text_changed)
         row.addWidget(self._file_field)
         browse_btn = LocksmithIconButton(":/assets/material-icons/browse.svg", tooltip="Browse")
         browse_btn.setFixedSize(48, 48)
@@ -122,6 +123,23 @@ class ImportConnectionCredentialPage(LocksmithFormPage):
         if not self.app or not self.app.vault:
             return None
         return self.app.vault.plugin_state.get("keriguard_user", {}).get("settings")
+
+    def _on_file_text_changed(self, text: str):
+        """Validate the credential file path whenever the field text changes."""
+        path = text.strip()
+        if path:
+            p = Path(path)
+            if p.is_file() and p.suffix == ".cesr":
+                self.clear_error()
+                self.error_label.setText("")
+                return
+        if not path:
+            # Empty is acceptable — user hasn't picked yet
+            self.clear_error()
+            self.error_label.setText("")
+            return
+        if self.error_label.text() != "Invalid credential file path":
+            self.show_error("Invalid credential file path")
 
     def _show_status(self, message: str, error: bool = False):
         self._status_label.setText(message)

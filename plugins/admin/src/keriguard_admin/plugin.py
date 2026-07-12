@@ -17,7 +17,6 @@ from .db.basing import KERIGuardBaser, sync_account_to_keriguard
 if TYPE_CHECKING:
     from locksmith.core.apping import LocksmithApplication
     from locksmith.core.vaulting import Vault
-    from locksmith.ui.vault.page import VaultPage
 
 logger = help.ogler.getLogger(__name__)
 
@@ -124,6 +123,38 @@ class KERIGuardAdminPlugin(PluginBase, AccountProviderPlugin):
         if doer_name == "TeamCreationPage" and event_type == "hk_team_created":
             logger.info("KERIGuardPlugin: healthKERI account created — syncing")
             sync_account_to_keriguard(self._app)
+            self._rebuild_essr()
+
+    def _rebuild_essr(self) -> None:
+        """Build the ESSR client into plugin_state if not already present.
+
+        Called after account sync so that credential issuance in the same
+        session as account creation can reach hkweb.
+        """
+        vault = self._app.vault
+        if not vault:
+            return
+        kg_state = vault.plugin_state.get("keriguard", {})
+        if kg_state.get("essr") is not None:
+            return
+        account = kg_state.get("account")
+        if not account:
+            return
+        try:
+            from kept.hk.configing import HealthKERIConfig
+            from kept.hk.essring import APIClient
+            config = HealthKERIConfig.get_instance()
+            hab = vault.hby.habByName(account.alias)
+            if hab:
+                kg_state["essr"] = APIClient(
+                    url=config.protected_url,
+                    root=config.api_aid,
+                    hby=vault.hby,
+                    hab=hab,
+                )
+                logger.info("KERIGuardPlugin: ESSR client initialised after account sync")
+        except Exception as e:
+            logger.warning(f"KERIGuardPlugin: could not build ESSR client after sync: {e}")
 
     def _build_menu(self) -> None:
         self._account_button = MenuButton(

@@ -48,7 +48,7 @@ class KERIGuardSettings:
     registry_name: str = ""
     registrar_url: str = ""
     export_dir: str = ""
-    publish_mode: str = "registrar"  # "registrar" | "hkweb"
+    publish_mode: str = "registrar"  # "registrar" | "healthKERI"
 
 
 @dataclass

@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import Signal, QObject
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QWidget
 from keri import help
@@ -76,6 +75,7 @@ class KERIGuardUserPlugin(PluginBase, AccountProviderPlugin):
 
         # Setup completion
         setup_page.setup_complete.connect(self._on_setup_complete)
+        setup_page.initialization_done.connect(self._on_initialization_done)
 
         # Machines navigation
         machines_list.view_machine.connect(self._on_view_machine)
@@ -149,6 +149,8 @@ class KERIGuardUserPlugin(PluginBase, AccountProviderPlugin):
             watcher_hab=watcher_hab,
             registrar_url=registrar_url,
             watcher=self._watcher,
+            credential_source=settings.credential_source,
+            essr=essr,
         )
 
         vault.plugin_state["keriguard_user"]["applier"] = self._applier
@@ -245,6 +247,24 @@ class KERIGuardUserPlugin(PluginBase, AccountProviderPlugin):
                 conn_saids = [s.qb64 for s in (rgy.reger.schms.get(keys=Schema.CONNECTION_SCHEMA) or [])]
                 ordered = iface_saids + conn_saids
 
+                # In healthKERI mode the ESSR client may not have been available at
+                # startup (healthKERI account not yet configured).  Retry each iteration
+                # so polling activates as soon as the account is ready.
+                if (
+                    settings.credential_source == "healthKERI"
+                    and self._poller is not None
+                    and self._poller.loader is None
+                ):
+                    essr = self._build_essr(vault)
+                    if essr is not None:
+                        self._poller.set_essr(essr)
+                        if self._applier is not None:
+                            self._applier.set_essr(essr)
+                        logger.info(
+                            "KERIGuardUserPlugin: healthKERI account now available, "
+                            "SaaS credential polling activated"
+                        )
+
                 # Also ask the registrar for any freshly pushed credentials.
                 try:
                     new_saids = await self._poller.poll_once(vault.hby)
@@ -319,13 +339,23 @@ class KERIGuardUserPlugin(PluginBase, AccountProviderPlugin):
     # Navigation handlers
     # ------------------------------------------------------------------
 
-    def _on_setup_complete(self) -> None:
+    def _on_initialization_done(self) -> None:
+        """Called immediately when initialization succeeds; starts polling."""
         if self._app and self._app.vault:
             settings = self._db.keriguardUserSettings.get(keys=("settings",))
             if settings and settings.is_initialized:
                 self._start_polling(self._app.vault, settings)
-        self._navigate("keriguard_user_machines")
-        page = self._pages.get("keriguard_user_machines")
+
+    def _on_setup_complete(self) -> None:
+        """Called 1 second after initialization; navigates to the settings page."""
+        for item in self._keriguard_submenu_items:
+            if isinstance(item, MenuButton):
+                item.set_active(False)
+        settings_btn = self._nav_buttons_by_page.get("keriguard_user_settings")
+        if settings_btn:
+            settings_btn.set_active(True)
+        self._navigate("keriguard_user_settings")
+        page = self._pages.get("keriguard_user_settings")
         if page and hasattr(page, "on_show"):
             page.on_show()
 
@@ -403,8 +433,16 @@ class KERIGuardUserPlugin(PluginBase, AccountProviderPlugin):
 
         return items
 
+    def _is_initialized(self) -> bool:
+        if not self._app or not self._app.vault:
+            return False
+        settings = self._app.vault.plugin_state.get("keriguard_user", {}).get("settings")
+        return settings is not None and settings.is_initialized
+
     def _make_nav_handler(self, page_key: str, button: MenuButton):
         def handler():
+            if not self._is_initialized():
+                return
             for item in self._keriguard_submenu_items:
                 if isinstance(item, MenuButton):
                     item.set_active(False)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from PySide6.QtWidgets import QLabel, QHBoxLayout, QFileDialog, QWidget, QVBoxLayout
@@ -132,6 +133,7 @@ class KERIGuardUserSettingsPage(LocksmithFormPage):
         self._config_dir_field = FloatingLabelLineEdit("WireGuard Config Directory")
         self._config_dir_field.setFixedWidth(375)
         self._config_dir_field.line_edit.editingFinished.connect(self._on_config_dir_changed)
+        self._config_dir_field.line_edit.textChanged.connect(self._on_config_dir_text_changed)
         row.addWidget(self._config_dir_field)
         browse_btn = LocksmithIconButton(":/assets/material-icons/browse.svg", tooltip="Browse")
         browse_btn.setFixedSize(48, 48)
@@ -162,6 +164,7 @@ class KERIGuardUserSettingsPage(LocksmithFormPage):
         self._export_dir_field = FloatingLabelLineEdit("Export Directory")
         self._export_dir_field.setFixedWidth(375)
         self._export_dir_field.line_edit.editingFinished.connect(self._on_export_dir_changed)
+        self._export_dir_field.line_edit.textChanged.connect(self._on_export_dir_text_changed)
         row.addWidget(self._export_dir_field)
         browse_btn = LocksmithIconButton(":/assets/material-icons/browse.svg", tooltip="Browse")
         browse_btn.setFixedSize(48, 48)
@@ -311,6 +314,31 @@ class KERIGuardUserSettingsPage(LocksmithFormPage):
 
     def _on_export_dir_changed(self):
         self._save_settings(export_dir=self._export_dir_field.text().strip())
+
+    def _on_config_dir_text_changed(self, text: str):
+        """Validate the directory path whenever the field text changes."""
+        path = text.strip()
+        if path:
+            p = Path(path)
+            if p.is_dir():
+                self.clear_error()
+                return
+        if self.error_label.text() != "Invalid WireGuard config directory":
+            self.show_error("Invalid WireGuard config directory")
+
+    def _on_export_dir_text_changed(self, text: str):
+        """Validate the export directory path whenever the field text changes."""
+        path = text.strip()
+        if not path:
+            # Blank is valid — means "prompt each time"
+            self.clear_error()
+            return
+        p = Path(path)
+        if p.is_dir():
+            self.clear_error()
+            return
+        if self.error_label.text() != "Invalid export directory":
+            self.show_error("Invalid export directory")
 
     def _on_poll_interval_changed(self):
         text = self._poll_interval_field.text().strip()

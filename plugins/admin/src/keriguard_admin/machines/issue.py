@@ -22,6 +22,7 @@ from ..core.remoting import (
     push_credential_to_registrar,
     push_credential_via_essr,
     push_introduction_to_registrar,
+    _ensure_issuer_watched,
 )
 
 if TYPE_CHECKING:
@@ -383,8 +384,12 @@ class IssueInterfaceCredentialPage(LocksmithFormPage):
 
             publish_mode = settings.publish_mode if settings else "registrar"
 
-            if publish_mode == "hkweb" and essr:
+            if publish_mode == "healthKERI" and essr:
                 await push_credential_via_essr(grant_bytes, essr, introduction_bytes)
+                account = self.app.vault.plugin_state.get("keriguard", {}).get("account")
+                team = self.app.vault.plugin_state.get("keriguard", {}).get("team")
+                if account and team:
+                    await _ensure_issuer_watched(essr, hab, hby, account, team)
             elif settings and settings.registrar_url:
                 await push_credential_to_registrar(grant_bytes, settings.registrar_url)
                 if introduction_bytes:

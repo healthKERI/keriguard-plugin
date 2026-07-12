@@ -5,19 +5,20 @@ from __future__ import annotations
 import asyncio
 import logging
 import shutil
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import qasync
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame, QFileDialog,
 )
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Signal, QTimer
 
 from locksmith.ui import colors
 from locksmith.ui.toolkit.widgets.page import LocksmithFormPage
 from locksmith.ui.toolkit.widgets.fields import FloatingLabelComboBox, FloatingLabelLineEdit, LocksmithPlainTextEdit
 from locksmith.ui.toolkit.widgets.buttons import (
-    LocksmithButton, LocksmithInvertedButton, LocksmithIconButton, LocksmithCopyButton
+    LocksmithButton, LocksmithIconButton, LocksmithCopyButton
 )
 
 if TYPE_CHECKING:
@@ -31,6 +32,7 @@ class SetupPage(LocksmithFormPage):
     """Guided setup page: import a KERIGuard config file and initialise the user plugin."""
 
     setup_complete = Signal()
+    initialization_done = Signal()
 
     def __init__(self, app: "LocksmithApplication", parent: "VaultPage | None" = None):
         super().__init__(
@@ -42,6 +44,7 @@ class SetupPage(LocksmithFormPage):
         self.vault_name = ""
         self._config = None
         self._initializing = False
+        self._nav_timer: "QTimer | None" = None
         self._build_content()
 
     # ------------------------------------------------------------------
@@ -140,17 +143,6 @@ class SetupPage(LocksmithFormPage):
         btn_row.addStretch()
         layout.addLayout(btn_row)
 
-        self._done_button = LocksmithButton("Go to Machines")
-        self._done_button.setFixedWidth(160)
-        self._done_button.clicked.connect(self.setup_complete.emit)
-        self._done_button.hide()
-
-        done_row = QHBoxLayout()
-        done_row.addStretch()
-        done_row.addWidget(self._done_button)
-        done_row.addStretch()
-        layout.addLayout(done_row)
-
         layout.addStretch()
 
     def _add_section_header(self, layout: QVBoxLayout, header: str, sub: str):
@@ -168,6 +160,7 @@ class SetupPage(LocksmithFormPage):
         row.setSpacing(8)
         self._config_file_field = FloatingLabelLineEdit("Config File Path")
         self._config_file_field.setFixedWidth(375)
+        self._config_file_field.line_edit.textChanged.connect(self._on_config_file_text_changed)
         row.addWidget(self._config_file_field)
         browse_btn = LocksmithIconButton(":/assets/material-icons/browse.svg", tooltip="Browse files")
         browse_btn.setFixedSize(48, 48)
@@ -175,6 +168,7 @@ class SetupPage(LocksmithFormPage):
         row.addWidget(browse_btn)
         row.addStretch()
         layout.addLayout(row)
+        self._loading_config = False
 
     def _build_dir_row(self, layout, field_attr: str, label: str, browse_method: str):
         row = QHBoxLayout()
@@ -182,6 +176,7 @@ class SetupPage(LocksmithFormPage):
         field = FloatingLabelLineEdit(label)
         field.setFixedWidth(375)
         setattr(self, field_attr, field)
+        field.line_edit.textChanged.connect(self._on_config_dir_text_changed)
         row.addWidget(field)
         browse_btn = LocksmithIconButton(":/assets/material-icons/browse.svg", tooltip="Browse")
         browse_btn.setFixedSize(48, 48)
@@ -205,6 +200,7 @@ class SetupPage(LocksmithFormPage):
         lbl = QLabel("Summary")
         lbl.setStyleSheet("font-weight: 700; font-size: 14px;")
         inner.addWidget(lbl)
+        self._summary_title_lbl = lbl
 
         self._summary_issuer = self._make_summary_row(inner, "Issuer AID")
         self._summary_source = self._make_summary_row(inner, "Credential Source")
@@ -303,6 +299,37 @@ class SetupPage(LocksmithFormPage):
     # Event handlers
     # ------------------------------------------------------------------
 
+    def _on_config_file_text_changed(self, text: str):
+        """Attempt to load the config whenever the path field text changes."""
+        path = text.strip()
+        if path:
+            p = Path(path)
+            if p.is_file() and p.suffix in (".conf", ".yaml", ".yml"):
+                self._load_config_file(path)
+                self.clear_error()
+                return
+            if self.error_label.text() != "Invalid config file path":
+                self.show_error("Invalid config file path")
+        else:
+            self.clear_error()
+        self._config = None
+        self._update_summary()
+
+    def _on_config_dir_text_changed(self, text: str):
+        """Validate the directory path whenever the field text changes."""
+        path = text.strip()
+        if path:
+            p = Path(path)
+            if p.is_dir():
+                self.clear_error()
+                self._update_summary()
+                return
+            if self.error_label.text() != "Invalid WireGuard config directory":
+                self.show_error("Invalid WireGuard config directory")
+        else:
+            self.clear_error()
+        self._update_summary()
+
     def _browse_config_file(self):
         path, _ = QFileDialog.getOpenFileName(
             self, "Select KERIGuard Config File", "", "YAML Files (*.conf *.yaml *.yml);;All Files (*)"
@@ -359,6 +386,30 @@ class SetupPage(LocksmithFormPage):
         self._summary_issuer.setText(short_aid or "—")
         self._summary_source.setText(source or "—")
         self._summary_config_dir.setText(config_dir or "—")
+
+    def _show_summary_complete(self):
+        self._summary_frame.setStyleSheet(
+            f"QFrame {{ border: 1px solid {colors.SUCCESS}; border-radius: 8px; "
+            f"background: #f0fdf4; }}"
+            f" QFrame QLabel {{ border: none; }}"
+        )
+        self._summary_title_lbl.setText("✓ Initialized")
+        self._summary_title_lbl.setStyleSheet(
+            f"font-weight: 700; font-size: 14px; color: {colors.SUCCESS};"
+        )
+        for lbl in (self._summary_issuer, self._summary_source, self._summary_config_dir):
+            lbl.setStyleSheet(f"font-size: 13px; color: {colors.SUCCESS};")
+
+    def _show_summary_default(self):
+        self._summary_frame.setStyleSheet(
+            f"QFrame {{ border: 1px solid {colors.BORDER}; border-radius: 8px; "
+            f"background: white; }}"
+            f" QFrame QLabel {{ border: none; }}"
+        )
+        self._summary_title_lbl.setText("Summary")
+        self._summary_title_lbl.setStyleSheet("font-weight: 700; font-size: 14px;")
+        for lbl in (self._summary_issuer, self._summary_source, self._summary_config_dir):
+            lbl.setStyleSheet("font-size: 13px;")
 
     @qasync.asyncSlot()
     async def _on_initialize(self):
@@ -457,14 +508,19 @@ class SetupPage(LocksmithFormPage):
         kg_user_db.keriguardUserSettings.pin(keys=("settings",), val=settings)
         vault.plugin_state["keriguard_user"]["settings"] = settings
 
-        # 6. Show success
+        # 6. Show success and schedule auto-navigation after 1 second
         self._init_button.hide()
-        self._done_button.show()
+        self._show_summary_complete()
         self.show_success(
             "KERIGuard user plugin initialized successfully. "
             "This vault will now automatically receive and apply WireGuard "
             "credentials from the configured issuer."
         )
+        self.initialization_done.emit()
+        self._nav_timer = QTimer()
+        self._nav_timer.setSingleShot(True)
+        self._nav_timer.timeout.connect(self.setup_complete.emit)
+        self._nav_timer.start(1000)
         logger.info("SetupPage: KERIGuard user plugin initialized")
 
     async def _load_schemas(self, vault, loop):
@@ -488,7 +544,14 @@ class SetupPage(LocksmithFormPage):
             Schema.CONNECTION_SCHEMA: "wireguard-connection-v1.0.0.json",
         }
 
+        # The user plugin only needs the interface and connection schemas.
+        # TRUSTNET_SCHEMA is admin-only and its S3 OOBI is access-restricted.
+        _needed = {Schema.INTERFACE_SCHEMA, Schema.CONNECTION_SCHEMA}
+
         for schema_said, schema_oobi in SCHEMA_OOBIS.items():
+            if schema_said not in _needed:
+                continue
+
             # 1. Already loaded — nothing to do.
             if vault.hby.db.schema.get(keys=(schema_said,)) is not None:
                 logger.info(f"Schema {schema_said[:16]}… already in db, skipping")
@@ -518,4 +581,26 @@ class SetupPage(LocksmithFormPage):
         self.vault_name = vault_name
 
     def on_show(self):
-        self._update_summary()
+        if self._nav_timer is not None:
+            self._nav_timer.stop()
+            self._nav_timer = None
+
+        self.clear_error()
+        self.clear_success()
+
+        self._config = None
+        self._initializing = False
+
+        self._config_file_field.setText("")
+        self._issuer_aid_field.setText("")
+        self._issuer_oobi_field.setText("")
+        self._registrar_url_field.setText("")
+        self._config_dir_field.setText("")
+        self._credential_source_combo.setCurrentIndex(0)
+
+        self._init_button.setText("Initialize")
+        self._init_button.setEnabled(True)
+        self._init_button.show()
+
+        self._show_summary_default()
+        self._on_source_changed(self._credential_source_combo.currentText())

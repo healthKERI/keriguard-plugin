@@ -17,7 +17,11 @@ from locksmith.ui.toolkit.widgets.fields import FloatingLabelLineEdit, FloatingL
 from keriguard.core.kering import Issuer
 from keriguard.core.wireguarding import Schema
 from ..core.kering import issue_connection_credential_by_saids
-from ..core.remoting import push_credential_to_registrar
+from ..core.remoting import (
+    push_credential_to_registrar,
+    push_credential_via_essr,
+    _ensure_issuer_watched,
+)
 
 if TYPE_CHECKING:
     from locksmith.ui.vault.page import VaultPage
@@ -453,10 +457,25 @@ class IssueConnectionCredentialPage(LocksmithFormPage):
 
             kg_db = self.app.vault.plugin_state.get("keriguard", {}).get("db")
             settings = kg_db.keriguardSettings.get(keys=("settings",)) if kg_db else None
-            if settings and settings.registrar_url:
-                recipient_aid = creder.attrib.get("i")
-                grant = issuer.grant(creder.said, recipient_aid)
-                await push_credential_to_registrar(bytes(grant), settings.registrar_url)
+            essr = self.app.vault.plugin_state.get("keriguard", {}).get("essr")
+
+            # Connection credentials have no single recipient AID in attrib;
+            # use the first peer's interface credential recipient as the grant addressee.
+            iface1_creder, *_ = rgy.reger.cloneCred(said=iface1_said)
+            recipient_aid = iface1_creder.attrib.get("i")
+            grant = issuer.grant(creder.said, recipient_aid)
+            grant_bytes = bytes(grant)
+
+            publish_mode = settings.publish_mode if settings else "registrar"
+
+            if publish_mode == "healthKERI" and essr:
+                await push_credential_via_essr(grant_bytes, essr)
+                account = self.app.vault.plugin_state.get("keriguard", {}).get("account")
+                team = self.app.vault.plugin_state.get("keriguard", {}).get("team")
+                if account and team:
+                    await _ensure_issuer_watched(essr, hab, hby, account, team)
+            elif settings and settings.registrar_url:
+                await push_credential_to_registrar(grant_bytes, settings.registrar_url)
 
             if hasattr(self.app.vault, 'signals') and self.app.vault.signals:
                 self.app.vault.signals.emit_doer_event(

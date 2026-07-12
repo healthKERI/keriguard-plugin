@@ -29,9 +29,14 @@ class CredentialPoller:
     def __init__(self, hby, hab, rgy, settings: "KERIGuardUserSettings", essr=None):
         self.rgy = rgy
         self.issuer_aid = settings.issuer_aid
-        self._saas = False
+        self._saas = settings.credential_source == "healthKERI"
+        # Store constructor args so set_essr() can rebuild the loader later.
+        self._hby = hby
+        self._hab = hab
+        self._export_dir = settings.export_dir
+        self.loader = None
 
-        if settings.credential_source == "healthKERI" and essr is not None:
+        if self._saas and essr is not None:
             from sentinel.core.credentialing import SaaSCredentialLoader
             self.loader = SaaSCredentialLoader(
                 hby=hby,
@@ -40,8 +45,7 @@ class CredentialPoller:
                 export_dir=settings.export_dir,
                 essr=essr,
             )
-            self._saas = True
-        else:
+        elif not self._saas:
             from sentinel.core.credentialing import CredentialLoader
             self.loader = CredentialLoader(
                 hby=hby,
@@ -50,9 +54,29 @@ class CredentialPoller:
                 export_dir=settings.export_dir,
                 registrar_url=settings.registrar_url,
             )
+        else:
+            logger.warning(
+                "CredentialPoller: credential_source is 'healthKERI' but no ESSR client "
+                "is available — polling suspended until a healthKERI account is configured"
+            )
+
+    def set_essr(self, essr) -> None:
+        """Activate SaaS polling once an ESSR client becomes available."""
+        from sentinel.core.credentialing import SaaSCredentialLoader
+        self.loader = SaaSCredentialLoader(
+            hby=self._hby,
+            hab=self._hab,
+            rgy=self.rgy,
+            export_dir=self._export_dir,
+            essr=essr,
+        )
+        logger.info("CredentialPoller: SaaSCredentialLoader activated")
 
     async def poll_once(self, hby) -> list[str]:
         """Search for new credentials. Returns list of newly loaded SAIDs."""
+        if self.loader is None:
+            return []
+
         if self.issuer_aid not in hby.kevers:
             logger.debug(f"CredentialPoller: issuer {self.issuer_aid} not yet in kevers")
             return []
