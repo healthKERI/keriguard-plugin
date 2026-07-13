@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from PySide6.QtWidgets import QLabel, QHBoxLayout, QFileDialog
@@ -10,7 +11,7 @@ from PySide6.QtWidgets import QLabel, QHBoxLayout, QFileDialog
 from locksmith.ui import colors
 from locksmith.ui.toolkit.widgets.page import LocksmithFormPage
 from locksmith.ui.toolkit.widgets.fields import FloatingLabelComboBox, FloatingLabelLineEdit
-from locksmith.ui.toolkit.widgets.buttons import LocksmithInvertedButton, LocksmithIconButton
+from locksmith.ui.toolkit.widgets.buttons import LocksmithIconButton
 
 from .db.basing import KERIGuardSettings
 
@@ -133,6 +134,9 @@ class KERIGuardSettingsPage(LocksmithFormPage):
         self._export_dir_field.line_edit.editingFinished.connect(
             self._on_export_dir_changed
         )
+        self._export_dir_field.line_edit.textChanged.connect(
+            self._on_export_dir_text_changed
+        )
         row.addWidget(self._export_dir_field)
 
         browse_btn = LocksmithIconButton(":/assets/material-icons/browse.svg", tooltip="Browse files")
@@ -236,6 +240,22 @@ class KERIGuardSettingsPage(LocksmithFormPage):
         path = self._export_dir_field.text().strip()
         self._save_settings(export_dir=path)
         logger.info(f"KERIGuard export directory saved: {path!r}")
+
+    def _on_export_dir_text_changed(self, text: str):
+        """Validate the export directory path whenever the field text changes."""
+        path = text.strip()
+        if not path:
+            # Blank is valid — means "prompt each time"
+            self.clear_error()
+            self.error_label.setText("")
+            return
+        p = Path(path)
+        if p.is_dir():
+            self.clear_error()
+            self.error_label.setText("")
+            return
+        if self.error_label.text() != "Invalid export directory":
+            self.show_error("Invalid export directory")
 
     def on_show(self) -> None:
         self._load_settings()
