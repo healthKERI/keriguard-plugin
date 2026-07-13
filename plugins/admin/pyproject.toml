@@ -12,6 +12,7 @@ license = { text = "MIT" }
 
 authors = [
     { name = "Ari Argoud", email = "ari@healthkeri.com" },
+    { name = "Phil Feairheller", email = "phil@healthkeri.com" },
 ]
 
 keywords = ["healthKERI", "cryptography", "KERI", "ACDC"]

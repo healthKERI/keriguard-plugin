@@ -3,6 +3,9 @@
 
 keriguard_admin — KERIGuard plugin settings page.
 """
+import os
+from urllib.parse import urlparse
+
 from keri import help
 
 from PySide6.QtCore import Qt, QPropertyAnimation, QEasingCurve, QRect, Signal, QSize
@@ -13,6 +16,7 @@ from PySide6.QtWidgets import (
 from keri.app.habbing import GroupHab
 from keriguard_admin.db.basing import KERIGuardSettings
 from locksmith.core.apping import LocksmithApplication
+from locksmith.ui.vault.identifiers.authenticate import WitnessAuthenticationDialog
 from locksmith.ui import colors
 from locksmith.ui.toolkit.widgets.buttons import LocksmithButton, LocksmithIconButton, LocksmithInvertedButton
 from locksmith.ui.toolkit.widgets.fields import FloatingLabelComboBox, FloatingLabelLineEdit
@@ -63,6 +67,7 @@ class KERIGuardAdminSetupPage(LocksmithFormPage):
         self._build_issuer_section()
         self._build_export_dir_section()
         self.content_layout.addSpacing(50)
+        self._build_error_display()
         self._build_notification()
         self._build_button_row()
         self.content_layout.addStretch()
@@ -212,6 +217,32 @@ class KERIGuardAdminSetupPage(LocksmithFormPage):
         row.addStretch()
         self.content_layout.addLayout(row)
 
+    def _build_error_display(self):
+        """Build the error message display area."""
+        self._error_frame = QFrame()
+        self._error_frame.setStyleSheet(f"""
+            QFrame {{
+                background-color: #fee;
+                border: 1px solid #fcc;
+                border-radius: 6px;
+                padding: 12px;
+            }}
+        """)
+        self._error_frame.setVisible(False)
+
+        error_layout = QVBoxLayout()
+        error_layout.setContentsMargins(0, 0, 0, 0)
+        error_layout.setSpacing(4)
+
+        self._error_label = QLabel()
+        self._error_label.setStyleSheet("color: #c00; font-size: 13px; font-weight: 500;")
+        self._error_label.setWordWrap(True)
+        error_layout.addWidget(self._error_label)
+
+        self._error_frame.setLayout(error_layout)
+        self.content_layout.addWidget(self._error_frame)
+        self.content_layout.addSpacing(10)
+
     def _build_notification(self):
         hint = QLabel(
             "Click Complete Setup to save your settings, load KERIGuard schema and "
@@ -265,7 +296,64 @@ class KERIGuardAdminSetupPage(LocksmithFormPage):
     def _cancel(self) -> None:
         self._parent.navigate_to(Pages.VAULT)
 
+    def _validate_form(self) -> tuple[bool, list[str]]:
+        """Validate the form fields before saving settings.
+
+        Returns:
+            tuple[bool, list[str]]: (is_valid, error_messages)
+        """
+        errors = []
+
+        # Validate publish mode specific requirements
+        mode = self.toggle.value()
+        if mode == "serviceprovider":
+            if self._service_provider_dropdown.currentIndex() == -1:
+                errors.append("Please select a Service Provider.")
+        elif mode == "opensource":
+            registrar_url = self._registrar_url_field.text().strip()
+            if not registrar_url:
+                errors.append("Please enter a Registrar URL.")
+            else:
+                # Validate URL format
+                try:
+                    result = urlparse(registrar_url)
+                    if not all([result.scheme, result.netloc]):
+                        errors.append("Registrar URL must be a valid URL (e.g., https://example.com).")
+                except Exception:
+                    errors.append("Registrar URL must be a valid URL.")
+
+        # Validate issuer selection
+        if self._issuer_dropdown.currentIndex() == -1:
+            errors.append("Please select an Issuer.")
+
+        # Validate export directory if provided
+        export_dir = self._export_dir_field.text().strip()
+        if export_dir:
+            if not os.path.isdir(export_dir):
+                errors.append("Export Directory must be a valid directory path.")
+
+        return (len(errors) == 0, errors)
+
+    def _display_errors(self, errors: list[str]) -> None:
+        """Display validation errors to the user."""
+        if errors:
+            error_text = "<br>".join([f"• {error}" for error in errors])
+            self._error_label.setText(error_text)
+            self._error_frame.setVisible(True)
+        else:
+            self._error_frame.setVisible(False)
+
     def _save_settings(self) -> None:
+        # Validate the form first
+        is_valid, errors = self._validate_form()
+        if not is_valid:
+            self._display_errors(errors)
+            logger.warning(f"Form validation failed: {errors}")
+            return
+
+        # Clear any existing errors
+        self._display_errors([])
+
         if not self.app or not self.app.vault:
             return
         kg_db = self.app.vault.plugin_state.get("keriguard", {}).get("db")
@@ -275,26 +363,42 @@ class KERIGuardAdminSetupPage(LocksmithFormPage):
         hby = self.app.vault.hby
         rgy = self.app.vault.rgy
 
-        settings = KERIGuardSettings()
+        self.settings = KERIGuardSettings()
         logger.info(f"setting issuer alias as {self._issuer_dropdown.currentText()}")
         issuer_alias = self._issuer_map[self._issuer_dropdown.currentText()]
         hab = hby.habByName(issuer_alias)
-        settings.issuer_aid = hab.pre
+        self.settings.issuer_aid = hab.pre
 
         registrar_url = self._registrar_url_field.text().strip()
         if registrar_url is not None:
-            settings.registrar_url = registrar_url
+            self.settings.registrar_url = registrar_url
 
         export_dir = self._export_dir_field.text().strip()
         if export_dir is not None:
-            settings.export_dir = export_dir
+            self.settings.export_dir = export_dir
 
         publish_mode = self.toggle.value()
         if publish_mode is not None:
-            settings.publish_mode = publish_mode
+            self.settings.publish_mode = publish_mode
 
-        kg_db.keriguardSettings.pin(keys=("settings",), val=settings)
+        kg_db.keriguardSettings.pin(keys=("settings",), val=self.settings)
         self.setup_complete_clicked.emit()
+
+    def _load_schema(self, hab, rgy):
+        issuer_aid = hab.pre
+        logger.info(f"Issuer {issuer_aid} has {len(hab.kever.wits)} witnesses, launching auth dialog")
+
+        # Launch witness authentication dialog
+        auth_dialog = WitnessAuthenticationDialog(
+            app=self.app,
+            hab=hab,
+            witness_ids=hab.kever.wits,
+            auth_only=True,
+            signals=self.app.vault.signals,
+            parent=self
+        )
+        auth_dialog.open()
+        return
 
     def on_show(self) -> None:
         logger.info("KERIGuard setup shown")
