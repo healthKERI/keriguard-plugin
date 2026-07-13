@@ -83,7 +83,7 @@ class KERIGuardAdminPlugin(PluginBase, AccountProviderPlugin):
         if account:
             try:
                 from kept.hk.configing import HealthKERIConfig
-                from kept.hk.essring import APIClient
+                from .core.essring import APIClient
                 config = HealthKERIConfig.get_instance()
                 hab = vault.hby.habByName(account.alias)
                 if hab:
@@ -142,7 +142,7 @@ class KERIGuardAdminPlugin(PluginBase, AccountProviderPlugin):
             return
         try:
             from kept.hk.configing import HealthKERIConfig
-            from kept.hk.essring import APIClient
+            from .core.essring import APIClient
             config = HealthKERIConfig.get_instance()
             hab = vault.hby.habByName(account.alias)
             if hab:
