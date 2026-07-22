@@ -20,14 +20,14 @@ logger = help.ogler.getLogger(__name__)
 
 def _wg_status(interface_name: str) -> str:
     try:
-        from keriguard.core.systeming import _is_wireguard_up
+        from keriguard.core.systeming import is_wireguard_up
         loop = asyncio.get_event_loop()
         if loop.is_running():
             import concurrent.futures
             with concurrent.futures.ThreadPoolExecutor() as pool:
-                result = pool.submit(asyncio.run, _is_wireguard_up(interface_name)).result()
+                result = pool.submit(asyncio.run, is_wireguard_up(interface_name)).result()
         else:
-            result = loop.run_until_complete(_is_wireguard_up(interface_name))
+            result = loop.run_until_complete(is_wireguard_up(interface_name))
         return "Active" if result else "Inactive"
     except Exception:
         return "Unknown"

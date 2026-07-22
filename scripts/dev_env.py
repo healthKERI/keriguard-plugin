@@ -336,10 +336,19 @@ async def main(connection: "iterm2.Connection") -> None:
         s_lock,
         'export SSL_CERT_FILE=$(python -c "import certifi; print(certifi.where())")',
     )
-    await _send(s_lock, "cd /Users/arilieb/healthkeri/locksmith/src/locksmith")
-    await _send(s_lock, "python main.py")
 
-    print()
+    # await _send(s_lock, "cd /Users/arilieb/healthkeri/locksmith/src/locksmith")
+    # await _send(s_lock, "python main.py")
+
+    await _send(s_lock, "cd /Users/arilieb/healthkeri/locksmith/")
+    await _send(s_lock, "./scripts/build_test.sh")
+    await asyncio.sleep(20)
+    await _send(s_lock, "open /Applications/Locksmith.app --stdout /tmp/locksmith.log --stderr /tmp/locksmith.log")
+
+    # Re-use keriguard window to examine locksmith logs
+    await _activate(s_setup, "keriguard", project_key="keriguard")
+    await _send(s_setup, "tail -f /tmp/locksmith.log")
+
     print("✓ All services started.")
     print("  Top:    Witnesses | SaaS (hkweb) | Locksmith")
     print("  Bottom: Setup / Watcher | Registrar Sentinel | Registrar")

@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 from keri import help
 
 from keriguard.app.sentinel.services.cred_service import CredService
+from keriguard.core.systeming import WireGuardNotApprovedError
 from keriguard.core.wireguarding import Schema, PeerResolutionPendingError
 
 if TYPE_CHECKING:
@@ -251,7 +252,7 @@ class WireGuardApplier:
         """
         Apply a credential to the WireGuard config.
 
-        Returns one of: "applied" | "pending_sudo" | "pending_oobi" | "error"
+        Returns one of: "applied" | "pending_ne_approval" | "pending_oobi" | "error"
         """
         try:
             creder, *_ = self.rgy.reger.cloneCred(said=said)
@@ -262,8 +263,10 @@ class WireGuardApplier:
         schema = creder.sad.get("s", "")
         try:
             if schema == Schema.INTERFACE_SCHEMA:
+                logger.info(f"WireGuardApplier: applying interface credential {said[:16]}…")
                 await self.cred_service.process_interface_credential(said, creder)
             elif schema == Schema.CONNECTION_SCHEMA:
+                logger.info(f"WireGuardApplier: applying connection credential {said[:16]}…")
                 await self._resolve_peer_aids(creder)
                 await self.cred_service.process_connection_credential(said, creder)
             else:
@@ -275,9 +278,12 @@ class WireGuardApplier:
                 f"WireGuardApplier: peer AID resolution pending for {said[:16]}…; will retry"
             )
             return "pending_oobi"
-        except PermissionError:
-            logger.warning(f"WireGuardApplier: permission error applying {said} — sudoers not configured")
-            return "pending_sudo"
+        except WireGuardNotApprovedError:
+            logger.info(
+                f"WireGuardApplier: KERIGuard Helper's network extension not yet "
+                f"approved for {said[:16]}…; will retry"
+            )
+            return "pending_ne_approval"
         except Exception as exc:
             logger.warning(f"WireGuardApplier: error applying {said}: {exc}")
             return "error"

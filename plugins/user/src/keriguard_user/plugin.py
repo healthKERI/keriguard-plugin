@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import sys
 from typing import TYPE_CHECKING
 
 from PySide6.QtGui import QIcon
@@ -229,7 +230,7 @@ class KERIGuardUserPlugin(PluginBase, AccountProviderPlugin):
         Tracks which SAIDs have been successfully applied so that:
         - Credentials already in the registry at startup are picked up even
           when the embedded sentinel loads them concurrently with this task.
-        - Transient failures ("error", "pending_oobi", "pending_sudo") are
+        - Transient failures ("error", "pending_oobi", "pending_ne_approval") are
           retried on the next poll interval.
         - Interface credentials are always applied before connection credentials
           so the .conf file exists before a peer is appended to it.
@@ -341,10 +342,46 @@ class KERIGuardUserPlugin(PluginBase, AccountProviderPlugin):
 
     def _on_initialization_done(self) -> None:
         """Called immediately when initialization succeeds; starts polling."""
+        from .core.helper_launch import launch_helper_app
+
+        launch_helper_app()
+
         if self._app and self._app.vault:
             settings = self._db.keriguardUserSettings.get(keys=("settings",))
             if settings and settings.is_initialized:
                 self._start_polling(self._app.vault, settings)
+
+    def _on_keriguard_menu_opened(self) -> None:
+        """Runs each time the KERIGuard menu entry is opened: verifies the
+        helper is installed and reachable, alerting/attempting install/smoke
+        testing as appropriate."""
+        from .core.helper_check import is_helper_installed
+
+        if not is_helper_installed():
+            from .core.helper_launch import launch_helper_app
+
+            if not getattr(sys, "frozen", False):
+                logger.error(
+                    "KERIGuardUserPlugin: KERIGuardHelper is not installed/registered on this "
+                    "machine. This is a dev (non-frozen) run, so it can't be auto-installed -- "
+                    "build and install KERIGuardHelper.app yourself (see keriguard-helper's "
+                    "Local dev workflow) if you need to exercise the WireGuard tunnel path."
+                )
+            else:
+                logger.warning("KERIGuardUserPlugin: KERIGuardHelper not installed; attempting to launch it")
+                launch_helper_app()
+            return
+
+        asyncio.create_task(self._run_helper_smoke_test(), name="keriguard_user_helper_smoke_test")
+
+    async def _run_helper_smoke_test(self) -> None:
+        from .core.helper_check import smoke_test_ipc
+
+        ok, response, error = await smoke_test_ipc()
+        if ok:
+            logger.info(f"KERIGuardUserPlugin: helper IPC smoke test passed ({response})")
+        else:
+            logger.error(f"KERIGuardUserPlugin: helper IPC smoke test failed: {error or response}")
 
     def _on_setup_complete(self) -> None:
         """Called 1 second after initialization; navigates to the settings page."""
@@ -411,6 +448,7 @@ class KERIGuardUserPlugin(PluginBase, AccountProviderPlugin):
             "KERIGuard",
         )
         self._account_button.is_account_btn = True
+        self._account_button.clicked.connect(self._on_keriguard_menu_opened)
         self._keriguard_submenu_items = self._create_submenu_items()
 
     def _create_submenu_items(self) -> list[QWidget]:

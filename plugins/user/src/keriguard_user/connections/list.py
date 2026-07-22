@@ -1,6 +1,7 @@
 # -*- encoding: utf-8 -*-
 """keriguard_user.connections.list — Connections list page (received connection credentials)."""
 import asyncio
+from pathlib import Path
 from typing import Dict, Any, TYPE_CHECKING
 
 from PySide6.QtCore import Signal, QMetaObject, Qt, Q_ARG
@@ -24,6 +25,12 @@ class ConnectionsListPage(QWidget):
     view_connection = Signal(str)
     import_clicked = Signal()
     _status_ready = Signal()  # internal signal to update table from main thread
+
+    _ROW_ACTION_ICONS = {
+        "View": ":/assets/material-icons/visibility.svg",
+        "Start": ":/assets/material-icons/enable.svg",
+        "Stop": ":/assets/material-icons/close.svg",
+    }
 
     def __init__(self, app, parent: "VaultPage | None" = None):
         super().__init__(parent)
@@ -59,8 +66,9 @@ class ConnectionsListPage(QWidget):
             icon_path=":/assets/material-icons/airline_stops.svg",
             show_add_button=True,
             add_button_text="Import Credential",
-            row_actions=["View"],
-            row_action_icons={"View": ":/assets/material-icons/visibility.svg"},
+            row_actions=["View", "Start", "Stop"],
+            row_action_icons=self._ROW_ACTION_ICONS,
+            row_actions_callback=self._get_row_actions,
             items_per_page=10,
             show_search=True,
             parent=self,
@@ -163,7 +171,7 @@ class ConnectionsListPage(QWidget):
 
     async def _check_statuses(self, conn_saids: list[str]) -> None:
         """Resolve WireGuard status for each connection asynchronously."""
-        from keriguard.core.systeming import _is_wireguard_up
+        from keriguard.core.systeming import is_wireguard_up
 
         results: list[tuple[str, str]] = []
         for conn_said in conn_saids:
@@ -171,13 +179,61 @@ class ConnectionsListPage(QWidget):
             if not iface_name:
                 continue
             try:
-                is_up = await _is_wireguard_up(iface_name)
+                is_up = await is_wireguard_up(iface_name)
                 results.append((conn_said, "Active" if is_up else "Inactive"))
             except Exception:
                 results.append((conn_said, "Unknown"))
 
         self._pending_status_checks = results
         self._status_ready.emit()
+
+    def _get_config_dir(self) -> str | None:
+        if not self.app or not self.app.vault:
+            return None
+        settings = self.app.vault.plugin_state.get("keriguard_user", {}).get("settings")
+        return getattr(settings, "config_dir", None) or None
+
+    def _get_row_actions(self, row_data: Dict[str, Any]) -> tuple[list[str], dict[str, str]]:
+        """Show View plus a Start/Stop toggle reflecting the connection's tunnel state."""
+        status = row_data.get("Status", "Unknown")
+        toggle = "Stop" if status == "Active" else "Start"
+        return ["View", toggle], self._ROW_ACTION_ICONS
+
+    def _toggle_connection(self, said: str) -> None:
+        conn = self._connections_cache.get(said, {})
+        iface_name = self._resolve_local_iface_name(said)
+        config_dir = self._get_config_dir()
+        if not iface_name or not config_dir:
+            logger.warning(f"Cannot toggle connection {said}: interface or config_dir unresolved")
+            return
+
+        config_path = str(Path(config_dir) / f"{iface_name}.conf")
+        turning_on = conn.get("wg_status") != "Active"
+
+        try:
+            loop = asyncio.get_running_loop()
+            asyncio.ensure_future(
+                self._run_toggle(said, iface_name, config_path, turning_on), loop=loop
+            )
+        except RuntimeError:
+            logger.debug("No running event loop; skipping connection toggle")
+
+    async def _run_toggle(self, said: str, iface_name: str, config_path: str, turning_on: bool) -> None:
+        from keriguard.core.systeming import (
+            WireGuardControlError,
+            start_wireguard,
+            stop_wireguard,
+        )
+
+        try:
+            if turning_on:
+                await start_wireguard(iface_name, config_path)
+            else:
+                await stop_wireguard(iface_name, config_path)
+        except WireGuardControlError as exc:
+            logger.warning(f"Failed to toggle connection {said} ({iface_name}): {exc}")
+
+        await self._check_statuses([said])
 
     def _apply_status_updates(self) -> None:
         """Called on the main thread when async status checks complete."""
@@ -204,10 +260,13 @@ class ConnectionsListPage(QWidget):
             self._on_row_action({str(k): v for k, v in row_data.items()}, "View")
 
     def _on_row_action(self, row_data: Dict[str, Any], action: str) -> None:
+        said = row_data.get("_said", "")
+        if not said:
+            return
         if action == "View":
-            said = row_data.get("_said", "")
-            if said:
-                self.view_connection.emit(said)
+            self.view_connection.emit(said)
+        elif action in ("Start", "Stop"):
+            self._toggle_connection(said)
 
     def set_vault_name(self, vault_name: str) -> None:
         self.vault_name = vault_name
