@@ -243,7 +243,7 @@ class SetupPage(LocksmithFormPage):
 
         btn_row = QHBoxLayout()
         btn_row.setContentsMargins(0, 0, 0, 0)
-        self._open_ne_settings_button = LocksmithButton("Open Network Extension Settings")
+        self._open_ne_settings_button = LocksmithButton("Network Extension Settings")
         self._open_ne_settings_button.setFixedWidth(280)
         self._open_ne_settings_button.clicked.connect(self._open_network_extension_settings)
         btn_row.addWidget(self._open_ne_settings_button)
