@@ -271,10 +271,19 @@ class APIClient:
                 try:
                     next(parsator)
                 except StopIteration:
-                    # Parser finished this parse attempt
-                    # Recreate and prime parser for next batch of messages
-                    parsator = parser.onceParsator(ims=ims, framed=True, exc=exc)
-                    next(parsator)
+                    # Parser finished this parse attempt. A single TCP chunk
+                    # commonly contains more than one complete CESR message
+                    # back-to-back (e.g. an /ack exn followed by a /fwd exn),
+                    # so keep re-priming a fresh parser over the same buffer
+                    # until one suspends without immediately completing --
+                    # i.e. no further complete message is already buffered.
+                    while True:
+                        parsator = parser.onceParsator(ims=ims, framed=True, exc=exc)
+                        try:
+                            next(parsator)
+                        except StopIteration:
+                            continue
+                        break
 
             except Exception as e:
                 logger.exception(f"Error reading/parsing data: {e}")

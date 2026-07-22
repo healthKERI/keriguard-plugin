@@ -222,10 +222,11 @@ class ImportConnectionCredentialPage(LocksmithFormPage):
             else:
                 results.append((said, "no_applier"))
 
-        pending_sudo = any(r == "pending_sudo" for _, r in results)
-        if pending_sudo:
+        pending_ne_approval = any(r == "pending_ne_approval" for _, r in results)
+        if pending_ne_approval:
             self._show_status(
-                "Credential imported. WireGuard peer is pending — ensure sudoers is configured."
+                "Credential imported. WireGuard peer is pending — approve KERIGuard "
+                "Helper's network extension in System Settings."
             )
         else:
             self._show_status(f"Successfully imported {len(new_saids)} credential(s).")

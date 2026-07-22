@@ -2,6 +2,7 @@
 """keriguard_user.core.fetching — CredentialPoller wrapping sentinel loader classes."""
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from keri import help
@@ -33,7 +34,7 @@ class CredentialPoller:
         # Store constructor args so set_essr() can rebuild the loader later.
         self._hby = hby
         self._hab = hab
-        self._export_dir = settings.export_dir
+        self._export_dir = settings.export_dir or str(Path.home() / ".keri" / "keriguard-kel")
         self.loader = None
 
         if self._saas and essr is not None:
@@ -42,7 +43,7 @@ class CredentialPoller:
                 hby=hby,
                 hab=hab,
                 rgy=rgy,
-                export_dir=settings.export_dir,
+                export_dir=self._export_dir,
                 essr=essr,
             )
         elif not self._saas:
@@ -51,7 +52,7 @@ class CredentialPoller:
                 hby=hby,
                 hab=hab,
                 rgy=rgy,
-                export_dir=settings.export_dir,
+                export_dir=self._export_dir,
                 registrar_url=settings.registrar_url,
             )
         else:

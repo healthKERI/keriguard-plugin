@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import shutil
+import webbrowser
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -16,9 +16,9 @@ from PySide6.QtCore import Signal, QTimer
 
 from locksmith.ui import colors
 from locksmith.ui.toolkit.widgets.page import LocksmithFormPage
-from locksmith.ui.toolkit.widgets.fields import FloatingLabelComboBox, FloatingLabelLineEdit, LocksmithPlainTextEdit
+from locksmith.ui.toolkit.widgets.fields import FloatingLabelComboBox, FloatingLabelLineEdit
 from locksmith.ui.toolkit.widgets.buttons import (
-    LocksmithButton, LocksmithIconButton, LocksmithCopyButton
+    LocksmithButton, LocksmithIconButton
 )
 
 if TYPE_CHECKING:
@@ -130,8 +130,8 @@ class SetupPage(LocksmithFormPage):
         layout.addWidget(self._summary_frame)
         layout.addSpacing(32)
 
-        self._sudoers_section = self._build_sudoers_section()
-        layout.addWidget(self._sudoers_section)
+        self._ne_approval_section = self._build_ne_approval_section()
+        layout.addWidget(self._ne_approval_section)
         layout.addSpacing(32)
 
         btn_row = QHBoxLayout()
@@ -219,81 +219,46 @@ class SetupPage(LocksmithFormPage):
         layout.addLayout(row)
         return val
 
-    def _build_sudoers_section(self) -> QWidget:
+    def _build_ne_approval_section(self) -> QWidget:
         section = QWidget()
         layout = QVBoxLayout(section)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(8)
 
-        # Top row: header + subheader on the left, copy button on the right
-        top_row = QHBoxLayout()
-        top_row.setContentsMargins(0, 0, 0, 0)
-        top_row.setSpacing(0)
-
-        header_col = QVBoxLayout()
-        header_col.setSpacing(6)
-        header = QLabel("Sudoers Configuration")
+        header = QLabel("Network Extension Approval")
         header.setStyleSheet("font-weight: 600; font-size: 16px;")
-        header_col.addWidget(header)
+        layout.addWidget(header)
 
         hint = QLabel(
-            "To allow WireGuard interfaces to be brought up automatically, add the "
-            "following to /etc/sudoers.d/wireguard-keriguard.\n"
-            "Note: the chown rule transfers config file ownership back to your user "
-            "after writing, so the process can read it back (wg-quick still works "
-            "as root regardless of ownership):"
+            "KERIGuard Helper will ask for permission the first time you connect. "
+            "Open System Settings → General → Login Items & Extensions → Network "
+            "Extensions and enable KERIGuard Helper."
         )
         hint.setWordWrap(True)
         hint.setStyleSheet(f"font-size: 13px; color: {colors.TEXT_SUBTLE};")
         hint.setFixedWidth(800)
-        header_col.addWidget(hint)
+        layout.addWidget(hint)
 
-        top_row.addLayout(header_col)
+        layout.addSpacing(4)
 
-        wg_quick = shutil.which("wg-quick") or "/usr/local/bin/wg-quick"
-        wg = shutil.which("wg") or "/usr/local/bin/wg"
-        _chown = shutil.which("chown") or "/usr/sbin/chown"
-        snippet = (
-            f"# KERIGuard WireGuard access\n"
-            f"%admin ALL=(ALL) NOPASSWD: {wg_quick} up /usr/local/var/wireguard/keriguard/*\n"
-            f"%admin ALL=(ALL) NOPASSWD: {wg_quick} down /usr/local/var/wireguard/keriguard/*\n"
-            f"%admin ALL=(ALL) NOPASSWD: {wg_quick} strip /usr/local/var/wireguard/keriguard/*\n"
-            f"%admin ALL=(ALL) NOPASSWD: {wg} show *\n"
-            f"%admin ALL=(ALL) NOPASSWD: {wg} syncconf * /dev/stdin\n"
-            f"%admin ALL=(ALL) NOPASSWD: /usr/bin/tee /usr/local/var/wireguard/keriguard/*\n"
-            f"%admin ALL=(ALL) NOPASSWD: {_chown} * /usr/local/var/wireguard/keriguard/*"
-        )
-
-        self._sudoers_copy_button = LocksmithCopyButton(
-            copy_content=snippet,
-            tooltip="Copy sudoers snippet",
-            icon_size=24,
-        )
-        top_row.addSpacing(10)
-        top_row.addWidget(self._sudoers_copy_button)
-        top_row.addStretch()
-
-        layout.addLayout(top_row)
-
-        self._sudoers_snippet_edit = LocksmithPlainTextEdit()
-        self._sudoers_snippet_edit.setPlainText(snippet)
-        self._sudoers_snippet_edit.setReadOnly(True)
-        self._sudoers_snippet_edit._bg_color = "white"
-        self._sudoers_snippet_edit._update_styling()
-        # Size to fit content: count lines and set a reasonable fixed height
-        line_count = snippet.count("\n") + 1
-        self._sudoers_snippet_edit.setFixedHeight(max(line_count * 20 + 30, 100))
-        self._sudoers_snippet_edit.setFixedWidth(840)
-
-        snippet_row = QHBoxLayout()
-        snippet_row.setContentsMargins(0, 0, 0, 0)
-        snippet_row.addWidget(self._sudoers_snippet_edit)
-        snippet_row.addStretch()
-        layout.addLayout(snippet_row)
-        layout.addWidget(self._sudoers_snippet_edit)
+        btn_row = QHBoxLayout()
+        btn_row.setContentsMargins(0, 0, 0, 0)
+        self._open_ne_settings_button = LocksmithButton("Open Network Extension Settings")
+        self._open_ne_settings_button.setFixedWidth(280)
+        self._open_ne_settings_button.clicked.connect(self._open_network_extension_settings)
+        btn_row.addWidget(self._open_ne_settings_button)
+        btn_row.addStretch()
+        layout.addLayout(btn_row)
 
         return section
 
+    def _open_network_extension_settings(self):
+        """Open System Settings directly to Login Items & Extensions' Network
+        Extensions list, where the user approves KERIGuard Helper's tunnel
+        provider extension (macOS 13+)."""
+        webbrowser.open(
+            "x-apple.systempreferences:com.apple.LoginItems-Settings.extension?ExtensionItems"
+        )
 
     # ------------------------------------------------------------------
     # Event handlers
