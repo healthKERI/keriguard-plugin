@@ -12,6 +12,7 @@ license = { text = "MIT" }
 
 authors = [
     { name = "Ari Argoud", email = "ari@healthkeri.com" },
+    { name = "Phil Feairheller", email = "phil@healthkeri.com" },
 ]
 
 keywords = ["healthKERI", "cryptography", "KERI", "ACDC"]
@@ -24,6 +25,7 @@ classifiers = [
 
 dependencies = [
     "keriguard @git+https://git@github.com/healthKERI/keriguard",
+    "locksmith==0.0.1"
 ]
 
 [project.entry-points."locksmith.plugins"]
