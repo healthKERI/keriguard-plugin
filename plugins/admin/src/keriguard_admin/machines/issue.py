@@ -385,7 +385,7 @@ class IssueInterfaceCredentialPage(LocksmithFormPage):
             publish_mode = settings.publish_mode if settings else "registrar"
 
             if publish_mode == "healthKERI" and essr:
-                await push_credential_via_essr(grant_bytes, essr, introduction_bytes)
+                await push_credential_via_essr(grant_bytes, essr, creder.said, introduction_bytes)
                 account = self.app.vault.plugin_state.get("keriguard", {}).get("account")
                 team = self.app.vault.plugin_state.get("keriguard", {}).get("team")
                 if account and team:

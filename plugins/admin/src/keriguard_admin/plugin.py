@@ -66,8 +66,6 @@ class KERIGuardAdminPlugin(PluginBase, AccountProviderPlugin):
             "keriguard_placeholder": KERIGuardPlaceholderPage("KERIGuard", self.parent),
         }
 
-        machines_list.view_machine.connect(self._on_view_machine)
-        machines_list.issue_clicked.connect(self._on_issue_interface)
         machine_detail.back_clicked.connect(self._on_back_to_machines)
         machine_detail.view_connection.connect(self._on_view_connection)
         connections_list.view_connection.connect(self._on_view_connection)
@@ -77,8 +75,17 @@ class KERIGuardAdminPlugin(PluginBase, AccountProviderPlugin):
         issue_connection.back_clicked.connect(self._on_back_to_connections)
 
         keriguard_setup.setup_complete_clicked.connect(
-            lambda: self._navigate("keriguard_machines")
+            lambda: self._show_keriguard_machines()
         )
+
+    def _show_keriguard_machines(self):
+        vault_page = self._get_vault_page()
+        if vault_page:
+            vault_page.nav_menu.push_plugin_menu("keriguard_admin")
+            vault_page._show_page("keriguard_machines")
+            create_page = self._pages.get("keriguard_machines")
+            if create_page and hasattr(create_page, "on_show"):
+                create_page.on_show()
 
 
     def on_vault_opened(self, vault: "Vault") -> None:
@@ -195,12 +202,6 @@ class KERIGuardAdminPlugin(PluginBase, AccountProviderPlugin):
     def _on_back_to_connections(self) -> None:
         self._navigate("keriguard_connections")
         page = self._pages.get("keriguard_connections")
-        if page and hasattr(page, "on_show"):
-            page.on_show()
-
-    def _on_issue_interface(self) -> None:
-        self._navigate("keriguard_issue_interface")
-        page = self._pages.get("keriguard_issue_interface")
         if page and hasattr(page, "on_show"):
             page.on_show()
 

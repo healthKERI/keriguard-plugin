@@ -25,6 +25,7 @@ classifiers = [
 
 dependencies = [
     "keriguard @git+https://git@github.com/healthKERI/keriguard",
+    "locksmith==0.0.1"
 ]
 
 [project.entry-points."locksmith.plugins"]

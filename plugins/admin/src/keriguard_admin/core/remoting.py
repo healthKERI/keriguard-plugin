@@ -1,8 +1,10 @@
 # -*- encoding: utf-8 -*-
 """keriguard.core.remoting — Remote API calls to the registrar."""
+import json
 import httpx
 from keri import help, kering
 from keri.app.httping import CESR_CONTENT_TYPE
+from keri.core.serdering import SerderACDC
 
 logger = help.ogler.getLogger(__name__)
 
@@ -38,16 +40,43 @@ async def push_introduction_to_registrar(
 async def push_credential_via_essr(
     grant: bytes,
     essr,
+    credential: SerderACDC,
     introduction: bytes | None = None,
 ) -> None:
-    """PUT CESR grant bytes to hkweb's /registrar/ endpoint via ESSR."""
+    """ PUT CESR grant bytes to hkweb's /registrar/ endpoint via ESSR with multipart body
+
+    Parameters:
+        grant (bytes): signed IPEX grant message
+        essr (APIClient): ESSR client
+        credential (SerderACDC): Credential to publish
+        introduction(bytes): Signed IPEX introduction message
+
+    Returns:
+
+    """
+    # Construct multipart body with grant bytes and credential SAID
+    metadata_json = json.dumps({
+        "said": credential.said,
+        "issuer": credential.issuer,
+        "schema": credential.schema,
+        "publish": False
+    })
+
+    files = {
+        'doc': ('doc', metadata_json, 'application/json'),
+        'data': ('data', grant, CESR_CONTENT_TYPE)
+    }
+
     response = await essr.request(
-        path="/registrar/",
-        method="PUT",
-        data=grant,
-        headers={"Content-Type": CESR_CONTENT_TYPE},
+        path="/registrar",
+        method="POST",
+        files=files,
         timeout=30,
     )
+
+    print(response.status_code)
+    print(response.text)
+
     if response is None or response.status_code not in (200, 204):
         status = response.status_code if response else "None"
         raise RuntimeError(f"hkweb /registrar/ returned {status}")

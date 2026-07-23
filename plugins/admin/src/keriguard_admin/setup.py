@@ -14,6 +14,9 @@ from PySide6.QtWidgets import (
     QWidget, QHBoxLayout, QLabel, QButtonGroup, QFrame, QPushButton, QVBoxLayout, QFileDialog,
 )
 from keri.app.habbing import GroupHab
+from keriguard.core.wireguarding import SCHEMA_OOBIS, Schema
+from locksmith.core.credentialing import LoadSchemaDoer
+
 from keriguard_admin.db.basing import KERIGuardSettings
 from locksmith.core.apping import LocksmithApplication
 from locksmith.ui.vault.identifiers.authenticate import WitnessAuthenticationDialog
@@ -58,7 +61,6 @@ class KERIGuardAdminSetupPage(LocksmithFormPage):
         self._parent = parent
         self._build_content()
         logger.info("KERIGuard setup initialized")
-
 
     def _build_content(self):
         self._build_mode_section()
@@ -120,7 +122,7 @@ class KERIGuardAdminSetupPage(LocksmithFormPage):
         layout.addWidget(hint)
         layout.addSpacing(10)
 
-        self._service_provider_dropdown = FloatingLabelComboBox("Registry")
+        self._service_provider_dropdown = FloatingLabelComboBox("Service Provider")
         self._service_provider_dropdown.addItem("healthKERI")
 
         self._service_provider_dropdown.setFixedWidth(420)
@@ -267,11 +269,11 @@ class KERIGuardAdminSetupPage(LocksmithFormPage):
         btn_row.addWidget(self._cancel_btn)
         btn_row.addSpacing(12)
 
-        self._issue_btn = LocksmithButton("Complete Setup")
-        self._issue_btn.setFixedWidth(180)
-        self._issue_btn.clicked.connect(self._save_settings)
+        self._complete_btn = LocksmithButton("Complete Setup")
+        self._complete_btn.setFixedWidth(180)
+        self._complete_btn.clicked.connect(self._save_settings)
 
-        btn_row.addWidget(self._issue_btn)
+        btn_row.addWidget(self._complete_btn)
         btn_row.addStretch()
 
         self.content_layout.addLayout(btn_row)
@@ -360,6 +362,9 @@ class KERIGuardAdminSetupPage(LocksmithFormPage):
         if kg_db is None:
             return
 
+        self._complete_btn.setEnabled(False)
+        self._complete_btn.setText("Completing Setup...")
+
         hby = self.app.vault.hby
         rgy = self.app.vault.rgy
 
@@ -381,8 +386,10 @@ class KERIGuardAdminSetupPage(LocksmithFormPage):
         if publish_mode is not None:
             self.settings.publish_mode = publish_mode
 
+        self.settings.registry_name = Schema.INTERFACE_SCHEMA
         kg_db.keriguardSettings.pin(keys=("settings",), val=self.settings)
-        self.setup_complete_clicked.emit()
+
+        self._load_schema(hab, rgy)
 
     def _load_schema(self, hab, rgy):
         issuer_aid = hab.pre
@@ -400,8 +407,93 @@ class KERIGuardAdminSetupPage(LocksmithFormPage):
         auth_dialog.open()
         return
 
+    def _on_auth_codes_entered(self, data: dict):
+        """
+        Handle auth codes entered from WitnessAuthenticationDialog.
+
+        Args:
+            data: Dictionary containing 'codes' key with list of "witness_id:passcode" strings
+        """
+        self.app.vault.signals.auth_codes_entered.disconnect(self._on_auth_codes_entered)
+        codes = data.get('codes', [])
+        logger.info(f"Received {len(codes)} auth codes from WitnessAuthenticationDialog")
+
+        self._create_load_schema_doer(
+            oobi=SCHEMA_OOBIS[Schema.INTERFACE_SCHEMA],
+            create_registry=True,
+            issuer_aid=self.settings.issuer_aid,
+            auth_codes=codes
+        )
+
+        self._create_load_schema_doer(
+            oobi=SCHEMA_OOBIS[Schema.CONNECTION_SCHEMA],
+            create_registry=False
+        )
+
+
+    def _create_load_schema_doer(self, oobi=None, file_path=None, file_content=None,
+                                 create_registry=False, issuer_aid=None, auth_codes=None):
+        """
+        Create and launch the LoadSchemaDoer.
+
+        Args:
+            oobi: Optional OOBI URL
+            file_path: Optional file path
+            file_content: Optional file content bytes
+            create_registry: Whether to create a credential registry
+            issuer_aid: AID of the issuer identifier
+            auth_codes: Optional list of auth codes for witness authentication
+        """
+        try:
+            # Create the LoadSchemaDoer
+            doer = LoadSchemaDoer(
+                app=self.app,
+                oobi=oobi,
+                file_path=file_path,
+                file_content=file_content,
+                create_registry=create_registry,
+                issuer_aid=issuer_aid,
+                auth_codes=auth_codes,
+                signal_bridge=self.app.vault.signals if hasattr(self.app.vault, 'signals') else None
+            )
+
+            # Launch the doer
+            self.app.vault.extend([doer])
+
+            workflow = "OOBI" if oobi else "file"
+            logger.info(f"LoadSchemaDoer launched for {workflow}" +
+                        (f" with {len(auth_codes)} auth codes" if auth_codes else ""))
+
+        except Exception as e:
+            logger.error(f"Failed to create LoadSchemaDoer: {e}")
+            self.show_error(f"Failed to initiate schema loading: {str(e)}")
+
+    def _on_doer_event(self, doer_name: str, event_type: str, data: dict):
+        """
+        Handle doer events from the signal bridge.
+
+        Args:
+            doer_name: Name of the doer that emitted the event
+            event_type: Type of event
+            data: Event data dictionary
+        """
+        # Only handle LoadSchemaDoer events
+        if doer_name != "LoadSchemaDoer":
+            return
+
+        if event_type == "schema_loaded" and data.get('said', "") == Schema.CONNECTION_SCHEMA:
+            logger.info(f"AddSchemaDialog received: {doer_name} - {event_type}")
+            self.setup_complete_clicked.emit()
+        elif event_type == "schema_load_failed":
+            error_msg = data.get('error', 'Schema loading failed')
+            self.show_error(error_msg)
+
+
     def on_show(self) -> None:
         logger.info("KERIGuard setup shown")
+
+        self.app.vault.signals.auth_codes_entered.connect(self._on_auth_codes_entered)
+        self.app.vault.signals.doer_event.connect(self._on_doer_event)
         self._load_dropdowns()
 
     def _on_toggle_changed(self, value: str):
@@ -412,7 +504,6 @@ class KERIGuardAdminSetupPage(LocksmithFormPage):
         return self.toggle.value()
 
     def _load_dropdowns(self):
-        logger.info("LOADING DROPDOWNS")
         if not self.app or not self.app.vault:
             return
 
@@ -426,7 +517,6 @@ class KERIGuardAdminSetupPage(LocksmithFormPage):
             if isinstance(hab, GroupHab) or not hab.kever.wits:
                 continue
             display = f"{hab.name} — {aid}"
-            logger.info(f"ADDING {display}")
             self._issuer_map[display] = hab.name
             self._issuer_dropdown.addItem(display)
 
@@ -477,7 +567,7 @@ class SegmentedToggle(QWidget):
         for i, (_value, label, icon_path, dark_icon_path) in enumerate(options):
             btn = QPushButton(label, self._track)
             btn.setCheckable(True)
-            btn.setCursor(Qt.PointingHandCursor)
+            btn.setCursor(Qt.PointingHandCursor)  # type: ignore
             btn.setFlat(True)
             icon = QIcon(icon_path)
             btn.setIcon(icon)
@@ -491,7 +581,7 @@ class SegmentedToggle(QWidget):
 
         self._anim = QPropertyAnimation(self._highlight, b"geometry")
         self._anim.setDuration(220)
-        self._anim.setEasingCurve(QEasingCurve.OutCubic)
+        self._anim.setEasingCurve(QEasingCurve.OutCubic)  # type: ignore
 
         self._update_text_colors()
 
