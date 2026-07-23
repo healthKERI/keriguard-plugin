@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import webbrowser
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -285,12 +286,12 @@ class SetupPage(LocksmithFormPage):
         path = text.strip()
         if path:
             p = Path(path)
-            if p.is_dir():
+            if p.is_dir() and os.access(p, os.W_OK):
                 self.clear_error()
                 self._update_summary()
                 return
-            if self.error_label.text() != "Invalid WireGuard config directory":
-                self.show_error("Invalid WireGuard config directory")
+            if self.error_label.text() != "WireGuard config directory does not exist or is not writeable":
+                self.show_error("WireGuard config directory does not exist or is not writeable")
         else:
             self.clear_error()
         self._update_summary()
@@ -408,6 +409,13 @@ class SetupPage(LocksmithFormPage):
 
         if not issuer_aid or not issuer_oobi or not config_dir:
             logger.warning("SetupPage: missing required fields")
+            return
+
+        config_dir_path = Path(config_dir)
+        if not config_dir_path.is_dir() or not os.access(config_dir_path, os.W_OK):
+            self.show_error("WireGuard config directory does not exist or is not writeable")
+            self._init_button.setText("Initialize")
+            self._init_button.setEnabled(True)
             return
 
         from keriguard.core.initializing import load_schema, load_oobi
