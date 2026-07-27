@@ -102,6 +102,16 @@ class SetupPage(LocksmithFormPage):
         layout.addWidget(self._issuer_oobi_field)
         layout.addSpacing(32)
 
+        self._add_section_header(
+            layout,
+            header="Server Identity",
+            sub="A dedicated machine identity will be provisioned via your healthKERI "
+                "account's auth-code flow when you click Initialize. This identity "
+                "(not your vault's own AID) is what future KERIGuard daemons act as, "
+                "and keeps working even while this vault is locked.",
+        )
+        layout.addSpacing(32)
+
         self._registrar_section = QWidget()
         reg_layout = QVBoxLayout(self._registrar_section)
         reg_layout.setContentsMargins(0, 0, 0, 0)
@@ -206,6 +216,7 @@ class SetupPage(LocksmithFormPage):
         self._summary_issuer = self._make_summary_row(inner, "Issuer AID")
         self._summary_source = self._make_summary_row(inner, "Credential Source")
         self._summary_config_dir = self._make_summary_row(inner, "Config Directory")
+        self._summary_server_aid = self._make_summary_row(inner, "Server AID")
         return frame
 
     def _make_summary_row(self, layout, label: str) -> QLabel:
@@ -363,7 +374,10 @@ class SetupPage(LocksmithFormPage):
         self._summary_title_lbl.setStyleSheet(
             f"font-weight: 700; font-size: 14px; color: {colors.SUCCESS};"
         )
-        for lbl in (self._summary_issuer, self._summary_source, self._summary_config_dir):
+        for lbl in (
+            self._summary_issuer, self._summary_source, self._summary_config_dir,
+            self._summary_server_aid,
+        ):
             lbl.setStyleSheet(f"font-size: 13px; color: {colors.SUCCESS};")
 
     def _show_summary_default(self):
@@ -374,8 +388,12 @@ class SetupPage(LocksmithFormPage):
         )
         self._summary_title_lbl.setText("Summary")
         self._summary_title_lbl.setStyleSheet("font-weight: 700; font-size: 14px;")
-        for lbl in (self._summary_issuer, self._summary_source, self._summary_config_dir):
+        for lbl in (
+            self._summary_issuer, self._summary_source, self._summary_config_dir,
+            self._summary_server_aid,
+        ):
             lbl.setStyleSheet("font-size: 13px;")
+        self._summary_server_aid.setText("—")
 
     @qasync.asyncSlot()
     async def _on_initialize(self):
@@ -460,7 +478,17 @@ class SetupPage(LocksmithFormPage):
                 toad=0,
             )
 
-        # 5. Save settings
+        # 5. Provision the dedicated headless machine identity (PLAN.md Phase 1).
+        server_identity = await self._provision_server_identity(vault, loop)
+        if not server_identity.get("success"):
+            self._init_button.setText("Initialize")
+            self._init_button.setEnabled(True)
+            return
+        self._summary_server_aid.setText(
+            server_identity["server_aid"][:20] + "…"
+        )
+
+        # 6. Save settings
         from keriguard_user.db.basing import KERIGuardUserSettings
         kg_user_db = vault.plugin_state.get("keriguard_user", {}).get("db")
         if kg_user_db is None:
@@ -477,11 +505,18 @@ class SetupPage(LocksmithFormPage):
             export_dir="",
             poll_interval=30,
             is_initialized=True,
+            server_name=server_identity["server_name"],
+            server_alias=server_identity["server_alias"],
+            server_base_dir=server_identity["server_base_dir"],
+            server_aid=server_identity["server_aid"],
+            sentinel_name=server_identity["sentinel_name"],
+            sentinel_alias=server_identity["sentinel_alias"],
+            sentinel_aid=server_identity["sentinel_aid"],
         )
         kg_user_db.keriguardUserSettings.pin(keys=("settings",), val=settings)
         vault.plugin_state["keriguard_user"]["settings"] = settings
 
-        # 6. Show success and schedule auto-navigation after 1 second
+        # 7. Show success and schedule auto-navigation after 1 second
         self._init_button.hide()
         self._show_summary_complete()
         self.show_success(
@@ -495,6 +530,78 @@ class SetupPage(LocksmithFormPage):
         self._nav_timer.timeout.connect(self.setup_complete.emit)
         self._nav_timer.start(1000)
         logger.info("SetupPage: KERIGuard user plugin initialized")
+
+    async def _provision_server_identity(self, vault, loop) -> dict:
+        """Provision the dedicated headless machine identity (PLAN.md Phase 1).
+
+        Obtains an auth code via the vault's existing healthKERI ESSR client
+        and registers a new, non-delegated AID with healthKERI's team-server
+        flow. The auth code is used once, in-memory, and discarded -- it is
+        never persisted, logged, or written to the settings DB.
+
+        Returns {"success": True, "server_name", "server_alias",
+        "server_base_dir", "server_aid", "sentinel_name", "sentinel_alias",
+        "sentinel_aid"} or {"success": False}, having already surfaced an
+        actionable error via show_error() on failure.
+        """
+        essr = vault.plugin_state.get("healthkeri", {}).get("essr")
+        if essr is None:
+            self.show_error(
+                "A healthKERI account is required to provision this vault's "
+                "server identity. Configure one under the healthKERI menu, "
+                "then try Initialize again."
+            )
+            return {"success": False}
+
+        from locksmith.ui.vault.healthKERI.core.remoting import generate_auth_code
+        from keriguard_user.core import keystore
+        from keriguard_user.core.provisioning import bootstrap_server_identity
+
+        server_name = f"{vault.hby.name}-server"
+        server_alias = server_name
+
+        code_result = await generate_auth_code(
+            self.app, name=server_alias, machine_type="keriguard-server"
+        )
+        if not code_result.get("success"):
+            self.show_error(
+                f"Could not obtain a server auth code: {code_result.get('error')}"
+            )
+            return {"success": False}
+
+        auth_code = code_result["code"]
+        base_dir = str(keystore.keystores_dir())
+        bran = keystore.load_or_create_bran()
+
+        try:
+            result = await loop.run_in_executor(
+                None,
+                bootstrap_server_identity,
+                base_dir, bran, server_name, server_alias, auth_code,
+            )
+        finally:
+            auth_code = None  # noqa: F841 -- drop the plaintext code reference
+
+        if not result.get("success"):
+            self.show_error(
+                f"Server identity provisioning failed: {result.get('error')}"
+            )
+            return {"success": False}
+
+        logger.info(
+            f"SetupPage: provisioned server identity {result['server_aid'][:16]}… "
+            f"(sentinel {result['sentinel_aid'][:16]}…)"
+        )
+        return {
+            "success": True,
+            "server_name": server_name,
+            "server_alias": server_alias,
+            "server_base_dir": base_dir,
+            "server_aid": result["server_aid"],
+            "sentinel_name": result["sentinel_name"],
+            "sentinel_alias": result["sentinel_alias"],
+            "sentinel_aid": result["sentinel_aid"],
+        }
 
     async def _load_schemas(self, vault, loop):
         """Load KERIGuard schemas into the vault db.
