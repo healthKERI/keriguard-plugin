@@ -444,7 +444,7 @@ class KERIGuardUserPlugin(PluginBase, AccountProviderPlugin):
 
     def _build_menu(self) -> None:
         self._account_button = MenuButton(
-            QIcon(":/assets/custom/logos/keriguard-darkmode.png"),
+            QIcon(":/assets/custom/logos/vpn-user-lightmode.png"),
             "KERIGuard",
         )
         self._account_button.is_account_btn = True

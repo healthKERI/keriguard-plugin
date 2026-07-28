@@ -23,7 +23,6 @@ class ConnectionsListPage(QWidget):
     """Paginated list of KERIGuard connections."""
 
     view_connection = Signal(str)  # emits connection credential SAID
-    issue_clicked = Signal()
 
     def __init__(self, app, parent: "VaultPage | None" = None):
         super().__init__(parent)
@@ -56,7 +55,7 @@ class ConnectionsListPage(QWidget):
             title="Connections",
             icon_path=":/assets/material-icons/airline_stops.svg",
             show_add_button=True,
-            add_button_text="Issue Credential",
+            add_button_text="Connect Devices",
             row_actions=["View", "Export"],
             row_action_icons={
                 "View": ":/assets/material-icons/visibility.svg",
@@ -70,7 +69,7 @@ class ConnectionsListPage(QWidget):
         layout.addWidget(self.table)
         self.table.row_action_triggered.connect(self._on_row_action)
         self.table.row_clicked.connect(self._on_row_clicked)
-        self.table.add_clicked.connect(self.issue_clicked.emit)
+        self.table.add_clicked.connect(self._on_issue_connection)
 
     def _get_peer_name(self, interface_said: str) -> str:
         if not interface_said or not self.app or not self.app.vault:
@@ -149,6 +148,20 @@ class ConnectionsListPage(QWidget):
                 self.view_connection.emit(said)
         elif action == "Export":
             self._export_credential(row_data)
+
+    def _on_issue_connection(self) -> None:
+        """Show the Issue Connection Credential dialog."""
+        from .connect import IssueConnectionCredentialDialog
+
+        dialog = IssueConnectionCredentialDialog(self.app, self._parent)
+        dialog.connection_issued.connect(self._on_connection_issued)
+        dialog.exec()
+
+    def _on_connection_issued(self, said: str) -> None:
+        """Handle successful connection credential issuance."""
+        logger.info(f"Connection credential issued with SAID: {said}")
+        # Refresh the table to show the new connection
+        self.on_show()
 
     def _export_credential(self, row_data: Dict[str, Any]) -> None:
         said = row_data.get("_said", "")

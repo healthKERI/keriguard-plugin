@@ -77,9 +77,10 @@ class MachinesListPage(QWidget):
             show_search=True,
             show_add_button=True,
             add_button_text="Add Machine",
-            row_actions=["View", "Remove"],
+            row_actions=["View", "Connect", "Remove"],
             row_action_icons={
                 "View": ":/assets/material-icons/visibility.svg",
+                "Connect": ":/assets/material-icons/airline_stops.svg",
                 "Remove": ":/assets/material-icons/delete.svg"
             },
             items_per_page=10,
@@ -312,8 +313,7 @@ class MachinesListPage(QWidget):
         """
         Determine which row actions to show based on row data.
 
-        - Shows "Update" action when local keystate is ahead of remote
-        - Shows "Make Public" action when identifier is not already public
+        - Shows "Connect" action only when machine has an interface credential (Live status)
 
         Args:
             row_data: The row data dict
@@ -323,11 +323,17 @@ class MachinesListPage(QWidget):
         """
         all_icons = {
             "View": ":/assets/material-icons/visibility.svg",
+            "Connect": ":/assets/material-icons/airline_stops.svg",
             "Remove": ":/assets/material-icons/delete.svg"
         }
 
         # Start with base actions
         actions = ["View"]
+
+        # Only show "Connect" if machine has an interface credential
+        server_aid = row_data.get("_server_aid")
+        if server_aid and server_aid in self._credentials:
+            actions.append("Connect")
 
         # Add remaining actions
         actions.extend(["Remove"])
@@ -367,6 +373,8 @@ class MachinesListPage(QWidget):
 
         if action == "View":
             self._on_view_machine(machine)
+        elif action == "Connect":
+            self._on_connect_machine(machine)
         elif action == "Remove":
             self._on_remove_machine(machine_id, machine)
 
@@ -383,6 +391,57 @@ class MachinesListPage(QWidget):
             parent=self.parent
         )
         dialog.open()
+
+    def _on_connect_machine(self, machine_data: dict):
+        """Handle Connect machine action - opens connection dialog with Peer 1 pre-populated."""
+        from ..connections.connect import IssueConnectionCredentialDialog
+
+        logger.info(f"Connecting machine: {machine_data.get('name', 'Unknown')}")
+
+        # Get machine details
+        machine_name = machine_data.get('name', '')
+        server_aid = machine_data.get('server_aid', '')
+        tags = machine_data.get('tags', [])
+
+        # Get interface credential data
+        creder = self._credentials.get(server_aid)
+        if not creder:
+            logger.warning(f"No interface credential found for machine {machine_name}")
+            # Could show an error dialog here, but let the dialog handle validation
+            credential_said = None
+            ipaddress = ""
+            listen_port = 51820  # Default
+        else:
+            credential_said = creder.said
+            interface = creder.attrib.get("interface", {})
+            address = interface.get("address", [])
+            ipaddress = address[0].rstrip("/32") if address else ""
+            listen_port = interface.get("listenPort", 51820)
+
+        # Create the peer 1 data structure
+        peer1_data = {
+            'name': machine_name,
+            'server_aid': server_aid,
+            'credential_said': credential_said,
+            'ipaddress': ipaddress,
+            'listen_port': listen_port,
+            'tags': tags
+        }
+
+        # Open connection dialog with peer 1 pre-populated
+        dialog = IssueConnectionCredentialDialog(self.app, self.parent)
+        dialog.connection_issued.connect(self._on_connection_created)
+
+        # Pre-populate Peer 1 after dialog is shown
+        # Need to set this after the dialog is initialized
+        dialog.set_peer1_data(peer1_data)
+
+        dialog.exec()
+
+    def _on_connection_created(self, said: str):
+        """Handle successful connection creation."""
+        logger.info(f"Connection credential created with SAID: {said}")
+        # Could show a success message or refresh view if needed
 
     def _on_remove_machine(self, machine_id: str, machine_data: dict):
         """Handle Remove machine action."""

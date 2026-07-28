@@ -42,7 +42,6 @@ class KERIGuardAdminPlugin(PluginBase, AccountProviderPlugin):
         from .machines.issue import IssueInterfaceCredentialPage
         from .connections.list import ConnectionsListPage
         from .connections.detail import ConnectionDetailPage
-        from .connections.issue import IssueConnectionCredentialPage
         from .settings import KERIGuardSettingsPage
         from .setup import KERIGuardAdminSetupPage
 
@@ -51,7 +50,6 @@ class KERIGuardAdminPlugin(PluginBase, AccountProviderPlugin):
         connections_list = ConnectionsListPage(app, self.parent)
         connection_detail = ConnectionDetailPage(app, self.parent)
         issue_interface = IssueInterfaceCredentialPage(app, self.parent)
-        issue_connection = IssueConnectionCredentialPage(app, self.parent)
         keriguard_setup = KERIGuardAdminSetupPage(app, self.parent)
 
         self._pages = {
@@ -60,7 +58,6 @@ class KERIGuardAdminPlugin(PluginBase, AccountProviderPlugin):
             "keriguard_connections": connections_list,
             "keriguard_connection_detail": connection_detail,
             "keriguard_issue_interface": issue_interface,
-            "keriguard_issue_connection": issue_connection,
             "keriguard_setup": keriguard_setup,
             "keriguard_settings": KERIGuardSettingsPage(app, self.parent),
             "keriguard_placeholder": KERIGuardPlaceholderPage("KERIGuard", self.parent),
@@ -69,10 +66,8 @@ class KERIGuardAdminPlugin(PluginBase, AccountProviderPlugin):
         machine_detail.back_clicked.connect(self._on_back_to_machines)
         machine_detail.view_connection.connect(self._on_view_connection)
         connections_list.view_connection.connect(self._on_view_connection)
-        connections_list.issue_clicked.connect(self._on_issue_connection)
         connection_detail.back_clicked.connect(self._on_back_to_connections)
         issue_interface.back_clicked.connect(self._on_back_to_machines)
-        issue_connection.back_clicked.connect(self._on_back_to_connections)
 
         keriguard_setup.setup_complete_clicked.connect(
             lambda: self._show_keriguard_machines()
@@ -175,7 +170,7 @@ class KERIGuardAdminPlugin(PluginBase, AccountProviderPlugin):
 
     def _build_menu(self) -> None:
         self._account_button = MenuButton(
-            QIcon(":/assets/custom/logos/keriguard-darkmode.png"),
+            QIcon(":/assets/custom/logos/vpn-admin-lightmode.png"),
             "KERIGuard VPN"
         )
         self._account_button.is_account_btn = True
@@ -202,12 +197,6 @@ class KERIGuardAdminPlugin(PluginBase, AccountProviderPlugin):
     def _on_back_to_connections(self) -> None:
         self._navigate("keriguard_connections")
         page = self._pages.get("keriguard_connections")
-        if page and hasattr(page, "on_show"):
-            page.on_show()
-
-    def _on_issue_connection(self) -> None:
-        self._navigate("keriguard_issue_connection")
-        page = self._pages.get("keriguard_issue_connection")
         if page and hasattr(page, "on_show"):
             page.on_show()
 
