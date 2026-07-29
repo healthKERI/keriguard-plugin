@@ -16,9 +16,9 @@ from locksmith.ui.toolkit.widgets import (
     LocksmithButton,
     LocksmithInvertedButton
 )
-from locksmith.ui.vault.identifiers.authenticate import WitnessAuthenticationDialog
 from locksmith.ui.toolkit.widgets.fields import FloatingLabelLineEdit, FloatingLabelComboBox, AutocompleteLineEdit
 from locksmith.ui.vault.healthKERI.core import remoting
+from locksmith.ui.vault.identifiers.authenticate import WitnessAuthenticationDialog
 
 from ..core.kering import issue_connection_credential_by_saids
 from ..core.remoting import (

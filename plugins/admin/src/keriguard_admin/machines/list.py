@@ -387,9 +387,9 @@ class MachinesListPage(QWidget):
             icon_path=":/assets/material-icons/devices.svg",
             app=self.app,
             machine=machine_data,
-            on_refresh=lambda: self.machine_table.request_load(),
             parent=self.parent
         )
+        dialog.ip_assigned.connect(self.machine_table.request_load)
         dialog.open()
 
     def _on_connect_machine(self, machine_data: dict):

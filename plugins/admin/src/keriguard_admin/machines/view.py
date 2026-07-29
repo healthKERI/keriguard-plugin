@@ -10,6 +10,7 @@ from datetime import datetime
 from typing import Any
 
 import qasync
+from PySide6.QtCore import Signal
 from PySide6.QtGui import QIcon, Qt
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QLabel, QHBoxLayout, QFrame
@@ -40,12 +41,13 @@ logger = help.ogler.getLogger(__name__)
 class ViewKERIGuardDeviceDialog(LocksmithDialog):
     """Dialog for viewing healthKERI machine details."""
 
+    ip_assigned = Signal()
+
     def __init__(
         self,
         icon_path: str,
         app,
         machine: dict[str, Any],
-        on_refresh: Callable[[], None] | None = None,
         parent=None
     ):
         """
@@ -60,7 +62,6 @@ class ViewKERIGuardDeviceDialog(LocksmithDialog):
         """
         self.app = app
         self.machine = machine
-        self.on_refresh = on_refresh
 
         self.name = machine.get('name', '')
         self.aid = machine.get('aid', '')
@@ -459,19 +460,11 @@ class ViewKERIGuardDeviceDialog(LocksmithDialog):
 
                 await self._issue_interface_credential()
 
-                # Refresh the view to show updated data
-                await self._refresh_view()
-
-                # Call the on_refresh callback if provided to update the list
-                if self.on_refresh:
-                    self.on_refresh()
-
             except Exception as e:
                 logger.warning(f"IP issued but failed to parse response: {e}")
                 # Still refresh the view even if we couldn't parse the response
                 await self._refresh_view()
-                if self.on_refresh:
-                    self.on_refresh()
+                self.ip_assigned.emit()
 
         except Exception as e:
             import traceback
@@ -612,12 +605,9 @@ class ViewKERIGuardDeviceDialog(LocksmithDialog):
                 if introduction_bytes:
                     await push_introduction_to_registrar(introduction_bytes, settings.registrar_url)
 
-            if hasattr(self.app.vault, 'signals') and self.app.vault.signals:
-                self.app.vault.signals.emit_doer_event(
-                    doer_name="IssueCredentialDoer",
-                    event_type="credential_issued",
-                    data={"schema": creder.schema, "said": creder.said},
-                )
+
+                # Refresh the view to show updated data
+            self.ip_assigned.emit()
 
             self.show_success(
                 f"Interface credential issued successfully. SAID: {creder.said}"
@@ -625,4 +615,5 @@ class ViewKERIGuardDeviceDialog(LocksmithDialog):
 
         except Exception as exc:
             logger.exception(f"IssueInterfaceCredentialPage: issuance failed: {exc}")
+            self.ip_assigned.emit()
             self.show_error(f"Issuance failed: {exc}")
