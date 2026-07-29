@@ -528,6 +528,8 @@ class ViewKERIGuardDeviceDialog(LocksmithDialog):
         Args:
             data: Dictionary containing 'codes' key with list of "witness_id:passcode" strings
         """
+        self.app.vault.signals.auth_codes_entered.disconnect(self._on_auth_codes_entered)
+
         try:
             hby = self.app.vault.hby
             rgy = self.app.vault.rgy
@@ -552,7 +554,7 @@ class ViewKERIGuardDeviceDialog(LocksmithDialog):
 
             interface_config = {
                 "listenPort": 51820,
-                "address": [f"{self.address.strip()}/32"],
+                "address": [f"{self.address.strip()}/24"],
             }
 
             interface_metadata = {

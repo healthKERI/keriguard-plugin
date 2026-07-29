@@ -7,6 +7,7 @@ import qasync
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QLabel, QHBoxLayout, QWidget, QVBoxLayout, QPushButton, QScrollArea
 from keri import help
+from keri.help import helping
 from keriguard.core.kering import Issuer
 from keriguard.core.wireguarding import Schema
 from locksmith.ui import colors
@@ -15,6 +16,7 @@ from locksmith.ui.toolkit.widgets import (
     LocksmithButton,
     LocksmithInvertedButton
 )
+from locksmith.ui.vault.identifiers.authenticate import WitnessAuthenticationDialog
 from locksmith.ui.toolkit.widgets.fields import FloatingLabelLineEdit, FloatingLabelComboBox, AutocompleteLineEdit
 from locksmith.ui.vault.healthKERI.core import remoting
 
@@ -162,7 +164,7 @@ class MachineAutocomplete(AutocompleteLineEdit):
         # Check if there's selected data from itemSelected signal
         if hasattr(self, '_selected_value') and self._selected_value:
             if isinstance(self._selected_value, dict):
-                return self._selected_value.get('credential_said')
+                return self._selected_value.get('said')
         return None
 
     def set_selected_value(self, value):
@@ -191,6 +193,9 @@ class IssueConnectionCredentialDialog(LocksmithDialog):
         self.vault_name = ""
         self.peer1_name = ""
         self.peer2_name = ""
+        self._selected_peer1_machine = None
+        self._selected_peer2_machine = None
+        self._should_reset_on_show = True  # Flag to control reset behavior
 
         # Create content widget with scroll area for long form
         scroll_area = QScrollArea()
@@ -234,6 +239,7 @@ class IssueConnectionCredentialDialog(LocksmithDialog):
         self.setFixedSize(700, 900)
 
         scroll_area.setWidget(content_widget)
+        self.app.vault.signals.auth_codes_entered.connect(self._on_auth_codes_entered)
 
         logger.info("IssueConnectionCredentialDialog initialized")
 
@@ -428,26 +434,33 @@ class IssueConnectionCredentialDialog(LocksmithDialog):
 
 
     def _peer1_machine_selected(self, value):
+        self._selected_peer1_machine = value
         self.peer1_name = value.get('name', '')
-        self._peer1_allowed_ips.setText(value.get('ipaddress', ''))
+        self._peer1_allowed_ips.setText(f"{value.get('ipaddress', '').rstrip('/24')}/32")
         self._peer1_listen_port.setText(f":{str(value.get('listen_port', 51820))}")
-        self._conn_name.setText(f"{self.peer1_name} - {self.peer2_name}")
+        self._conn_name.setText(f"{self.peer1_name}_{self.peer2_name}")
         self._peer1_endpoint.setFocus()
 
     def _peer2_machine_selected(self, value):
+        self._selected_peer2_machine = value
         self.peer2_name = value.get('name', '')
-        self._peer2_allowed_ips.setText(value.get('ipaddress', ''))
+        self._peer2_allowed_ips.setText(f"{value.get('ipaddress', '').rstrip('/24')}/32")
         self._peer2_endpoint.setFocus()
         self._peer2_listen_port.setText(f":{str(value.get('listen_port', 51820))}")
-        self._conn_name.setText(f"{self.peer1_name} - {self.peer2_name}")
+        self._conn_name.setText(f"{self.peer1_name}_{self.peer2_name}")
         self._peer2_endpoint.setFocus()
 
     def showEvent(self, event):
         """Override showEvent to load data when dialog is shown."""
         super().showEvent(event)
-        self._peer1_machine.setFocus()
         self.clear_error()
-        self._reset_form()
+        if self._should_reset_on_show:
+            self._peer1_machine.setFocus()
+            self._reset_form()
+        else:
+            # Reset flag for next time dialog is opened
+            self._peer1_endpoint.setFocus()
+            self._should_reset_on_show = True
 
     def set_peer1_data(self, peer1_data: dict):
         """
@@ -462,6 +475,9 @@ class IssueConnectionCredentialDialog(LocksmithDialog):
                 - listen_port: Listen port
                 - tags: List of tags
         """
+        # Skip reset on next show to preserve pre-populated data
+        self._should_reset_on_show = False
+
         # Set the selected value in the autocomplete
         self._peer1_machine.set_selected_value(peer1_data)
 
@@ -501,16 +517,16 @@ class IssueConnectionCredentialDialog(LocksmithDialog):
             bool: True if validation passes, False otherwise
         """
         # Validate peer 1 machine selection
-        peer1_said = self._peer1_machine.get_selected_credential_said()
-        if not peer1_said:
+        if not self._selected_peer1_machine:
             self.show_error("Please select a machine for Peer 1.")
             return False
+        peer1_said = self._selected_peer1_machine.get("credential_said")
 
         # Validate peer 2 machine selection
-        peer2_said = self._peer2_machine.get_selected_credential_said()
-        if not peer2_said:
+        if not self._selected_peer2_machine:
             self.show_error("Please select a machine for Peer 2.")
             return False
+        peer2_said = self._selected_peer2_machine.get("credential_said")
 
         # Check that the same machine isn't selected for both peers
         if peer1_said == peer2_said:
@@ -553,6 +569,39 @@ class IssueConnectionCredentialDialog(LocksmithDialog):
         self.issue_button.setText("Connecting…")
         self.clear_error()
 
+        kg_db = self.app.vault.plugin_state.get("keriguard", {}).get("db")
+        settings = kg_db.keriguardSettings.get(keys=("settings",)) if kg_db else None
+
+        if settings is None:
+            raise ValueError("Keriguard settings not found")
+
+        hby = self.app.vault.hby
+        hab = hby.habs[settings.issuer_aid]
+
+        auth_dialog = WitnessAuthenticationDialog(
+            app=self.app,
+            hab=hab,
+            witness_ids=hab.kever.wits,
+            auth_only=True,
+            signals=self.app.vault.signals,
+            parent=self
+        )
+        auth_dialog.open()
+        return
+
+    @qasync.asyncSlot()
+    async def _on_auth_codes_entered(self, data: dict):
+        """
+        Handles the processing and issuance of connection credentials. This asynchronous
+        slot processes the entered authentication codes, validates the associated data,
+        and issues a connection credential based on the provided configurations
+        and settings.
+
+        params:
+            data (dict): A dictionary containing entered authentication codes mapped to
+             witness
+        """
+        self.app.vault.signals.auth_codes_entered.disconnect(self._on_auth_codes_entered)
         try:
             kg_db = self.app.vault.plugin_state.get("keriguard", {}).get("db")
             settings = kg_db.keriguardSettings.get(keys=("settings",)) if kg_db else None
@@ -563,14 +612,16 @@ class IssueConnectionCredentialDialog(LocksmithDialog):
 
             hby = self.app.vault.hby
             rgy = self.app.vault.rgy
-            # TODO: Load issuer from settings
-            hab = hby.habs[settings["issuer_aid"]]
+            hab = hby.habs[settings.issuer_aid]
+
+            codes = data.get('codes', [])
+            logger.info(f"Received {len(codes)} auth codes from WitnessAuthenticationDialog")
 
             # Get credential SAIDs from selected machines
-            iface1_said = self._peer1_machine.get_selected_credential_said()
+            iface1_said = self._selected_peer1_machine.get("credential_said")
             if not iface1_said:
                 raise ValueError("Peer 1 machine has no credential selected")
-            iface2_said = self._peer2_machine.get_selected_credential_said()
+            iface2_said = self._selected_peer2_machine.get("credential_said")
             if not iface2_said:
                 raise ValueError("Peer 2 machine has no credential selected")
 
@@ -581,7 +632,8 @@ class IssueConnectionCredentialDialog(LocksmithDialog):
                 "allowedIps": _parse_allowed_ips(self._peer1_allowed_ips.text())
             }
             if ep := self._peer1_endpoint.text().strip():
-                peer1_config["endpoint"] = ep
+                port = str(self._selected_peer1_machine.get('listen_port', 51820))
+                peer1_config["endpoint"] = f"{ep}:{port}"
             if ka := self._peer1_keepalive.text().strip():
                 peer1_config["persistentKeepalive"] = int(ka)
 
@@ -589,7 +641,8 @@ class IssueConnectionCredentialDialog(LocksmithDialog):
                 "allowedIps": _parse_allowed_ips(self._peer2_allowed_ips.text())
             }
             if ep := self._peer2_endpoint.text().strip():
-                peer2_config["endpoint"] = ep
+                port = str(self._selected_peer2_machine.get('listen_port', 51820))
+                peer2_config["endpoint"] = f"{ep}:{port}"
             if ka := self._peer2_keepalive.text().strip():
                 peer2_config["persistentKeepalive"] = int(ka)
 
@@ -603,6 +656,13 @@ class IssueConnectionCredentialDialog(LocksmithDialog):
 
             issuer = Issuer(hby=hby, hab=hab, rgy=rgy)
 
+            auths = {}
+            if codes:
+                code_time = helping.nowIso8601()
+                for arg in codes:
+                    wit, code = arg.split(":")
+                    auths[wit] = f"{code}#{code_time}"
+
             creder = await issue_connection_credential_by_saids(
                 issuer=issuer,
                 iface1_said=iface1_said,
@@ -610,7 +670,7 @@ class IssueConnectionCredentialDialog(LocksmithDialog):
                 iface2_said=iface2_said,
                 peer2_config=peer2_config,
                 conn_meta=conn_meta,
-                auths={},
+                auths=auths,
             )
 
 

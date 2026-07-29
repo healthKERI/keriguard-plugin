@@ -159,7 +159,7 @@ class MachinesListPage(QWidget):
         if creder:
             interface = creder.attrib.get("interface", {})
             address = interface.get("address", "")
-            addy = address[0].rstrip("/32")
+            addy = address[0].rstrip("/24")
             machine["address"] = addy
         else:
             machine["address"] = ""
@@ -404,6 +404,7 @@ class MachinesListPage(QWidget):
         tags = machine_data.get('tags', [])
 
         # Get interface credential data
+        address = []
         creder = self._credentials.get(server_aid)
         if not creder:
             logger.warning(f"No interface credential found for machine {machine_name}")
@@ -415,15 +416,18 @@ class MachinesListPage(QWidget):
             credential_said = creder.said
             interface = creder.attrib.get("interface", {})
             address = interface.get("address", [])
-            ipaddress = address[0].rstrip("/32") if address else ""
+            ipaddress = address[0] if address else ""
             listen_port = interface.get("listenPort", 51820)
+
+        print(address or [])
+        print(ipaddress)
 
         # Create the peer 1 data structure
         peer1_data = {
             'name': machine_name,
             'server_aid': server_aid,
             'credential_said': credential_said,
-            'ipaddress': ipaddress,
+            'ipaddress': f"{ipaddress}",
             'listen_port': listen_port,
             'tags': tags
         }

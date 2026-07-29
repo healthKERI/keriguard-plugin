@@ -39,7 +39,6 @@ class KERIGuardAdminPlugin(PluginBase, AccountProviderPlugin):
     def _build_pages(self, app: "LocksmithApplication") -> None:
         from .machines.list import MachinesListPage
         from .machines.detail import MachineDetailPage
-        from .machines.issue import IssueInterfaceCredentialPage
         from .connections.list import ConnectionsListPage
         from .connections.detail import ConnectionDetailPage
         from .settings import KERIGuardSettingsPage
@@ -49,7 +48,6 @@ class KERIGuardAdminPlugin(PluginBase, AccountProviderPlugin):
         machine_detail = MachineDetailPage(app, self.parent)
         connections_list = ConnectionsListPage(app, self.parent)
         connection_detail = ConnectionDetailPage(app, self.parent)
-        issue_interface = IssueInterfaceCredentialPage(app, self.parent)
         keriguard_setup = KERIGuardAdminSetupPage(app, self.parent)
 
         self._pages = {
@@ -57,7 +55,6 @@ class KERIGuardAdminPlugin(PluginBase, AccountProviderPlugin):
             "keriguard_machine_detail": machine_detail,
             "keriguard_connections": connections_list,
             "keriguard_connection_detail": connection_detail,
-            "keriguard_issue_interface": issue_interface,
             "keriguard_setup": keriguard_setup,
             "keriguard_settings": KERIGuardSettingsPage(app, self.parent),
             "keriguard_placeholder": KERIGuardPlaceholderPage("KERIGuard", self.parent),
@@ -67,7 +64,6 @@ class KERIGuardAdminPlugin(PluginBase, AccountProviderPlugin):
         machine_detail.view_connection.connect(self._on_view_connection)
         connections_list.view_connection.connect(self._on_view_connection)
         connection_detail.back_clicked.connect(self._on_back_to_connections)
-        issue_interface.back_clicked.connect(self._on_back_to_machines)
 
         keriguard_setup.setup_complete_clicked.connect(
             lambda: self._show_keriguard_machines()
