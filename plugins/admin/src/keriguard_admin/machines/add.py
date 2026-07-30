@@ -339,7 +339,7 @@ class AddKERIGuardDeviceDialog(LocksmithDialog):
 
             # Determine local mode based on publish_mode
             # local: false for SaaS (serviceprovider), true for registrar (opensource)
-            local_mode = settings.publish_mode != "serviceprovider"
+            local_mode = settings.publish_mode != "healthKERI"
 
             # Build YAML configuration structure
             config = {
