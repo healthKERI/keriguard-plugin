@@ -36,21 +36,25 @@ from keri import help
 from keri.app import connecting, habbing
 from keri.core import parsing
 
+from . import keystore
+
 logger = help.ogler.getLogger(__name__)
 
 
-def _open_or_create_hab(base_dir: str, bran: str, name: str, alias: str):
-    """Open (or create) a Habery/hab pair at a sandbox-friendly absolute path.
+def _open_or_create_hab(bran: str, name: str, alias: str):
+    """Open (or create) a Habery/hab pair under `keystore.SERVER_BASE`.
 
-    `base` must be a relative path segment -- hio's `Filer.__init__`
-    (keripy's LMDB base class) raises `FilerError` on an absolute `base`.
-    `base_dir` here is the absolute Application Support directory from
-    `keystore.keystores_dir()` (PLAN.md Phase 5a), so it belongs in
-    `headDirPath`, not `base`. Verified via a live run of
-    `scripts/habery_concurrency_test.py`, which hit this exact
-    `hio.hioing.FilerError` before this fix.
+    Uses the default `headDirPath` -- the same one the human vault's own
+    Haberies already use (locksmith's `CreateVaultDialog` never overrides it
+    either) -- with `base=keystore.SERVER_BASE` as the differentiating
+    segment. hio's `Filer.__init__` only rejects an *absolute* `base`; a
+    relative, multi-segment value like this is exactly what
+    `locksmith.ui.vaults.drawer`'s base-navigation is built to handle, and it
+    keeps these Haberies reachable from the exact same location already
+    proven to work under the sandboxed build -- no `--data-dir`/`headDirPath`
+    override needed on either upstream CLI.
     """
-    hby = habbing.Habery(name=name, base="", headDirPath=base_dir, bran=bran, temp=False)
+    hby = habbing.Habery(name=name, base=keystore.SERVER_BASE, bran=bran, temp=False)
     hab = hby.habByName(alias)
     if hab is None:
         hab = hby.makeHab(
@@ -66,7 +70,6 @@ def _open_or_create_hab(base_dir: str, bran: str, name: str, alias: str):
 
 
 def bootstrap_server_identity(
-    base_dir: str,
     bran: str,
     name: str,
     alias: str,
@@ -92,13 +95,13 @@ def bootstrap_server_identity(
     sentinel_alias = f"{alias}-sentinel"
 
     try:
-        server_hby, server_hab = _open_or_create_hab(base_dir, bran, name, alias)
+        server_hby, server_hab = _open_or_create_hab(bran, name, alias)
     except Exception as exc:
         logger.exception(f"bootstrap_server_identity: could not open Habery {name!r}: {exc}")
         return {"success": False, "error": str(exc)}
 
     try:
-        sentinel_hby, sentinel_hab = _open_or_create_hab(base_dir, bran, sentinel_name, sentinel_alias)
+        sentinel_hby, sentinel_hab = _open_or_create_hab(bran, sentinel_name, sentinel_alias)
     except Exception as exc:
         logger.exception(f"bootstrap_server_identity: could not open Habery {sentinel_name!r}: {exc}")
         server_hby.close()

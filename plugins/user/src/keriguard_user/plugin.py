@@ -162,7 +162,6 @@ class KERIGuardUserPlugin(PluginBase, AccountProviderPlugin):
         )
 
     def _start_watcher(self, vault: "Vault", watcher_hab, settings) -> None:
-        from pathlib import Path
         try:
             from sentinel.core.witnessing import Watcher
             from sentinel.db.basing import SentinelBaser
@@ -171,10 +170,12 @@ class KERIGuardUserPlugin(PluginBase, AccountProviderPlugin):
             return
 
         try:
+            from .core import keystore
+
             sentinel_db_name = f"{vault.hby.name}-watcher"
             self._sentinel_db = SentinelBaser(name=sentinel_db_name, reopen=True)
 
-            export_dir = settings.export_dir or str(Path.home() / ".keri" / "keriguard-kel")
+            export_dir = settings.export_dir or str(keystore.DEFAULT_EXPORT_DIR)
 
             self._watcher = Watcher(
                 db=self._sentinel_db,
@@ -350,6 +351,29 @@ class KERIGuardUserPlugin(PluginBase, AccountProviderPlugin):
             settings = self._db.keriguardUserSettings.get(keys=("settings",))
             if settings and settings.is_initialized:
                 self._start_polling(self._app.vault, settings)
+                asyncio.create_task(
+                    self._launch_daemons(settings), name="keriguard_user_daemon_launch"
+                )
+
+    async def _launch_daemons(self, settings) -> None:
+        """Bootstrap the guardian/sentinel launchd agents and register the
+        issuer AID with the now-running sentinel daemon (DAEMONS.md Phase 3).
+
+        No-op on non-macOS/unfrozen (dev) runs -- see `is_frozen_macos()`.
+        Safe to call on every fresh initialization: `launchctl bootstrap` on
+        an already-loaded label and watch registration are both idempotent.
+        """
+        loop = asyncio.get_event_loop()
+
+        from .core.sentinel_launch import launch_sentinel_daemon
+        from .core.guardian_launch import launch_guardian_daemon
+        from .core.daemon_watch import register_issuer_watch
+
+        sentinel_ok = await loop.run_in_executor(None, launch_sentinel_daemon, settings)
+        await loop.run_in_executor(None, launch_guardian_daemon, settings)
+
+        if sentinel_ok:
+            await loop.run_in_executor(None, register_issuer_watch, settings)
 
     def _on_keriguard_menu_opened(self) -> None:
         """Runs each time the KERIGuard menu entry is opened: verifies the
@@ -373,6 +397,26 @@ class KERIGuardUserPlugin(PluginBase, AccountProviderPlugin):
             return
 
         asyncio.create_task(self._run_helper_smoke_test(), name="keriguard_user_helper_smoke_test")
+        self._check_daemon_health()
+
+    def _check_daemon_health(self) -> None:
+        """Logs guardian/sentinel launchd + heartbeat status; no user-facing
+        alert yet (helper checks above already gate the initial nudge)."""
+        from .core.daemon_launch import is_frozen_macos
+
+        if not is_frozen_macos():
+            return
+
+        from .core.guardian_check import is_guardian_installed, is_guardian_alive
+        from .core.sentinel_check import is_sentinel_installed
+
+        if not is_guardian_installed():
+            logger.warning("KERIGuardUserPlugin: guardian daemon not registered with launchd")
+        elif not is_guardian_alive():
+            logger.warning("KERIGuardUserPlugin: guardian daemon heartbeat is stale")
+
+        if not is_sentinel_installed():
+            logger.warning("KERIGuardUserPlugin: sentinel daemon not registered with launchd")
 
     async def _run_helper_smoke_test(self) -> None:
         from .core.helper_check import smoke_test_ipc

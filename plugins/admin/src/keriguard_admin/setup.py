@@ -48,7 +48,7 @@ class KERIGuardAdminSetupPage(LocksmithFormPage):
 
     SUBTITLES = {
         "opensource": "Open source — connect a public or self-hosted repository.",
-        "serviceprovider": "Service provider — connect to a vendor-managed integration.",
+        "healthKERI": "Service provider — connect to a vendor-managed integration.",
     }
 
     def __init__(self, app: "LocksmithApplication", parent: "VaultPage | None" = None):
@@ -90,7 +90,7 @@ class KERIGuardAdminSetupPage(LocksmithFormPage):
         self.content_layout.addSpacing(20)
 
         self.toggle = SegmentedToggle([
-            ("serviceprovider", "Service Provider", ":/assets/material-icons/trip.svg", ":/assets/material-icons/dark-trip.svg"),
+            ("healthKERI", "Service Provider", ":/assets/material-icons/trip.svg", ":/assets/material-icons/dark-trip.svg"),
             ("opensource", "Open Source", ":/assets/material-icons/open-source.svg", ":/assets/material-icons/dark-open-source.svg"),
         ])
         self.toggle.setFixedWidth(525)
@@ -308,7 +308,7 @@ class KERIGuardAdminSetupPage(LocksmithFormPage):
 
         # Validate publish mode specific requirements
         mode = self.toggle.value()
-        if mode == "serviceprovider":
+        if mode == "healthKERI":
             if self._service_provider_dropdown.currentIndex() == -1:
                 errors.append("Please select a Service Provider.")
         elif mode == "opensource":

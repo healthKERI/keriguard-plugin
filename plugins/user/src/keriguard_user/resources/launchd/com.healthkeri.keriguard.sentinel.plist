@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Template for the KERIGuard sentinel (KEL watcher, SaaS mode) launchd agent.
+  See keriguard_user.core.sentinel_launch for the placeholder token list
+  and the rendering contract (whole-token substitution only). No local
+  flag is passed here: SaaS mode is selected by config.yaml's local: false.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.healthkeri.keriguard.sentinel</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>{SENTINEL_EXECUTABLE}</string>
+        <string>start</string>
+        <string>--config</string>
+        <string>{CONFIG_YAML}</string>
+        <string>--base</string>
+        <string>{BASE}</string>
+        <string>--socket-dir</string>
+        <string>{SOCKET_DIR}</string>
+        <string>--name</string>
+        <string>{SENTINEL_NAME}</string>
+        <string>--alias</string>
+        <string>{SENTINEL_ALIAS}</string>
+        <string>--uxd</string>
+        <string>--export-dir</string>
+        <string>{EXPORT_DIR}</string>
+        <string>--passcode-file</string>
+        <string>{PASSCODE_FILE}</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+    <key>ProcessType</key>
+    <string>Background</string>
+    <key>StandardOutPath</key>
+    <string>{STDOUT_LOG}</string>
+    <key>StandardErrorPath</key>
+    <string>{STDERR_LOG}</string>
+</dict>
+</plist>

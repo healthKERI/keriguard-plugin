@@ -20,19 +20,33 @@ from keri.core import coring
 logger = help.ogler.getLogger(__name__)
 
 APP_SUPPORT_DIR = Path.home() / "Library" / "Application Support" / "KERIGuard"
-KEYSTORES_DIR = APP_SUPPORT_DIR / "keystores"
 BRAN_PATH = APP_SUPPORT_DIR / "server.bran"
 
+# Relative `base` segment (not an absolute headDirPath) for the headless
+# machine identity's Haberies -- lands them at <default_head>/keri/ks/plugins
+# /keriguard-user/{name,name-sentinel}, alongside the human vault's own
+# Haberies (which also use the default headDirPath), under a folder
+# locksmith.ui.vaults.drawer's base-navigation shows as a distinct entry
+# rather than mixing daemon keystores into the root vault list. hio's
+# `Filer.__init__` only rejects an *absolute* base, so this relative,
+# multi-segment value is legal -- no headDirPath override needed.
+SERVER_BASE = "plugins/keriguard-user"
 
-def keystores_dir() -> Path:
-    """Directory holding the headless machine identity's LMDB keystore(s).
+# DAEMONS.md Phase 3 -- daemon socket/config/log locations, all siblings of
+# the keystore tree above under the same App-Support root.
+SENTINEL_DIR = APP_SUPPORT_DIR / "sentinel"
+SENTINEL_SOCKET_DIR = SENTINEL_DIR
+SENTINEL_CONFIG_PATH = SENTINEL_DIR / "config.yaml"
+GUARDIAN_HEARTBEAT_PATH = APP_SUPPORT_DIR / "guardian.heartbeat"
+LOGS_DIR = APP_SUPPORT_DIR / "logs"
+LAUNCH_AGENTS_DIR = Path.home() / "Library" / "LaunchAgents"
 
-    A sibling of the human vault's own LMDB tree (not nested inside it) --
-    deleting the Locksmith vault must not orphan/break the still-running
-    daemons this identity will eventually back, and vice versa.
-    """
-    KEYSTORES_DIR.mkdir(parents=True, exist_ok=True)
-    return KEYSTORES_DIR
+GUARDIAN_AGENT_LABEL = "com.healthkeri.keriguard.guardian"
+SENTINEL_AGENT_LABEL = "com.healthkeri.keriguard.sentinel"
+
+# Shared with the in-process Watcher (plugin.py) -- the daemon and the vault
+# process must agree on where exported CESR files land.
+DEFAULT_EXPORT_DIR = Path.home() / ".keri" / "keriguard-kel"
 
 
 def generate_bran() -> str:

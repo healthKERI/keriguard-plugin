@@ -67,7 +67,9 @@ class SetupPage(LocksmithFormPage):
         self._add_section_header(
             layout,
             header="Import Config File",
-            sub="Load a keriguard.conf YAML file to pre-fill the fields below.",
+            sub="Load the keriguard.conf YAML file your administrator generated "
+                "when adding this machine. Required — it contains the server "
+                "identity's auth key.",
         )
         layout.addSpacing(10)
         self._build_config_file_row(layout)
@@ -105,10 +107,10 @@ class SetupPage(LocksmithFormPage):
         self._add_section_header(
             layout,
             header="Server Identity",
-            sub="A dedicated machine identity will be provisioned via your healthKERI "
-                "account's auth-code flow when you click Initialize. This identity "
-                "(not your vault's own AID) is what future KERIGuard daemons act as, "
-                "and keeps working even while this vault is locked.",
+            sub="A dedicated machine identity will be provisioned using the server "
+                "auth key from your imported config file. This identity (not your "
+                "vault's own AID) is what future KERIGuard daemons act as, and keeps "
+                "working even while this vault is locked.",
         )
         layout.addSpacing(32)
 
@@ -217,6 +219,7 @@ class SetupPage(LocksmithFormPage):
         self._summary_source = self._make_summary_row(inner, "Credential Source")
         self._summary_config_dir = self._make_summary_row(inner, "Config Directory")
         self._summary_server_aid = self._make_summary_row(inner, "Server AID")
+        self._summary_server_aid.setText("(pending Initialization)")
         return frame
 
     def _make_summary_row(self, layout, label: str) -> QLabel:
@@ -318,8 +321,8 @@ class SetupPage(LocksmithFormPage):
 
     def _load_config_file(self, path: str):
         try:
-            from keriguard.core.initializing import KeriguardConfig
-            self._config = KeriguardConfig.load(path)
+            from keriguard.core.initializing import InitializationConfig
+            self._config = InitializationConfig.load(path)
         except Exception as exc:
             logger.warning(f"SetupPage: could not load config file {path!r}: {exc}")
             self._config = None
@@ -393,7 +396,7 @@ class SetupPage(LocksmithFormPage):
             self._summary_server_aid,
         ):
             lbl.setStyleSheet("font-size: 13px;")
-        self._summary_server_aid.setText("—")
+        self._summary_server_aid.setText("(pending Initialization)")
 
     @qasync.asyncSlot()
     async def _on_initialize(self):
@@ -427,6 +430,20 @@ class SetupPage(LocksmithFormPage):
 
         if not issuer_aid or not issuer_oobi or not config_dir:
             logger.warning("SetupPage: missing required fields")
+            return
+
+        if (
+            self._config is None
+            or self._config.server is None
+            or not self._config.server.auth_key
+        ):
+            self.show_error(
+                "Load a KERIGuard config file with a server auth key before "
+                "initializing — ask your administrator to generate one from "
+                "Add Machine."
+            )
+            self._init_button.setText("Initialize")
+            self._init_button.setEnabled(True)
             return
 
         config_dir_path = Path(config_dir)
@@ -507,7 +524,7 @@ class SetupPage(LocksmithFormPage):
             is_initialized=True,
             server_name=server_identity["server_name"],
             server_alias=server_identity["server_alias"],
-            server_base_dir=server_identity["server_base_dir"],
+            server_base=server_identity["server_base"],
             server_aid=server_identity["server_aid"],
             sentinel_name=server_identity["sentinel_name"],
             sentinel_alias=server_identity["sentinel_alias"],
@@ -534,50 +551,45 @@ class SetupPage(LocksmithFormPage):
     async def _provision_server_identity(self, vault, loop) -> dict:
         """Provision the dedicated headless machine identity (PLAN.md Phase 1).
 
-        Obtains an auth code via the vault's existing healthKERI ESSR client
-        and registers a new, non-delegated AID with healthKERI's team-server
-        flow. The auth code is used once, in-memory, and discarded -- it is
-        never persisted, logged, or written to the settings DB.
+        Uses the admin-issued auth code carried in the imported config file
+        (self._config.server.auth_key) to register a new, non-delegated AID
+        with healthKERI's team-server flow. The user does not need their own
+        healthKERI account — the auth-code handoff is what lets this vault
+        join the network. The code is used once, in-memory, and discarded --
+        it is never persisted, logged, or written to the settings DB.
 
         Returns {"success": True, "server_name", "server_alias",
-        "server_base_dir", "server_aid", "sentinel_name", "sentinel_alias",
+        "server_base", "server_aid", "sentinel_name", "sentinel_alias",
         "sentinel_aid"} or {"success": False}, having already surfaced an
         actionable error via show_error() on failure.
         """
-        essr = vault.plugin_state.get("healthkeri", {}).get("essr")
-        if essr is None:
+        if (
+                self._config is None
+                or self._config.server is None
+                or not self._config.server.auth_key
+        ):
             self.show_error(
-                "A healthKERI account is required to provision this vault's "
-                "server identity. Configure one under the healthKERI menu, "
-                "then try Initialize again."
+                "Load a KERIGuard config file with a server auth key before "
+                "initializing — ask your administrator to generate one from "
+                "Add Machine."
             )
             return {"success": False}
 
-        from locksmith.ui.vault.healthKERI.core.remoting import generate_auth_code
         from keriguard_user.core import keystore
         from keriguard_user.core.provisioning import bootstrap_server_identity
 
         server_name = f"{vault.hby.name}-server"
         server_alias = server_name
 
-        code_result = await generate_auth_code(
-            self.app, name=server_alias, machine_type="keriguard-server"
-        )
-        if not code_result.get("success"):
-            self.show_error(
-                f"Could not obtain a server auth code: {code_result.get('error')}"
-            )
-            return {"success": False}
-
-        auth_code = code_result["code"]
-        base_dir = str(keystore.keystores_dir())
+        auth_code = self._config.server.auth_key
         bran = keystore.load_or_create_bran()
 
         try:
             result = await loop.run_in_executor(
                 None,
                 bootstrap_server_identity,
-                base_dir, bran, server_name, server_alias, auth_code,
+                bran, server_name, server_alias, auth_code,
+                True,  # witness — DAEMONS.md Decisions: guardian AID is witnessed
             )
         finally:
             auth_code = None  # noqa: F841 -- drop the plaintext code reference
@@ -596,7 +608,7 @@ class SetupPage(LocksmithFormPage):
             "success": True,
             "server_name": server_name,
             "server_alias": server_alias,
-            "server_base_dir": base_dir,
+            "server_base": keystore.SERVER_BASE,
             "server_aid": result["server_aid"],
             "sentinel_name": result["sentinel_name"],
             "sentinel_alias": result["sentinel_alias"],

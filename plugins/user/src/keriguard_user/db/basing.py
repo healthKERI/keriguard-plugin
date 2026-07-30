@@ -22,16 +22,18 @@ class KERIGuardUserSettings:
     kel_watch_interval: int = 30  # issuer KEL watch cadence via witnesses (seconds)
     is_initialized: bool = False
     # Headless machine identity pair (PLAN.md Phase 1) -- two dedicated,
-    # non-delegated AIDs, each in its own Habery under server_base_dir,
-    # provisioned via the healthKERI auth-code flow (PLAN.md Phase 1d: a
-    # shared Habery silently drops writes under concurrent access, so the
-    # guardian (WireGuard-peer) and sentinel (KEL-watcher) roles each get
-    # their own AID). Not yet consumed by the embedded polling loop (still
-    # on watcher_alias above); this is provisioning-only until Phase 2/3
-    # land the daemons that will actually run as these identities.
+    # non-delegated AIDs, each in its own Habery under the default headDirPath
+    # (same as the human vault's own Haberies), distinguished by a relative
+    # `server_base` segment (keystore.SERVER_BASE), provisioned via the
+    # healthKERI auth-code flow (PLAN.md Phase 1d: a shared Habery silently
+    # drops writes under concurrent access, so the guardian (WireGuard-peer)
+    # and sentinel (KEL-watcher) roles each get their own AID). Not yet
+    # consumed by the embedded polling loop (still on watcher_alias above);
+    # this is provisioning-only until Phase 2/3 land the daemons that will
+    # actually run as these identities.
     server_name: str = ""
     server_alias: str = ""
-    server_base_dir: str = ""
+    server_base: str = ""
     server_aid: str = ""
     sentinel_name: str = ""
     sentinel_alias: str = ""
