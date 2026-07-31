@@ -25,6 +25,28 @@ _RESOURCES_LAUNCHD_DIR = Path(__file__).resolve().parents[1] / "resources" / "la
 
 _PLACEHOLDER_RE = re.compile(r"\{[A-Z_]+\}")
 
+# The daemon executables are embedded wrapped in a minimal .app bundle
+# (Contents/MacOS/<executable>, Contents/Info.plist) rather than as bare
+# Mach-O binaries directly under Contents/Resources. A bare signed
+# executable has no CFBundleName/CFBundleDisplayName for macOS's Background
+# Items / Login Items UI to show, so it falls back to the code signature's
+# Common Name -- the developer's own name on the Developer ID Application
+# cert -- as the displayed name. Wrapping in a bundle with its own
+# CFBundleName fixes that. `locksmith/scripts/embed_daemons.py` builds these
+# bundles at package time using this same mapping.
+DAEMON_APP_INFO = {
+    "kg-guardian": {
+        "app_name": "KERIGuardGuardian.app",
+        "bundle_name": "KERIGuard Guardian",
+        "bundle_id": "com.healthkeri.keriguard.guardian",
+    },
+    "sentinel-daemon": {
+        "app_name": "KERIGuardSentinel.app",
+        "bundle_name": "KERIGuard Sentinel",
+        "bundle_id": "com.healthkeri.keriguard.sentinel",
+    },
+}
+
 
 def is_frozen_macos() -> bool:
     return platform.system() == "Darwin" and getattr(sys, "frozen", False)
@@ -44,11 +66,21 @@ def find_daemon_executable(name: str) -> Path | None:
     """Locate a frozen daemon executable (e.g. "kg-guardian",
     "sentinel-daemon") embedded next to KERIGuardHelper.app under
     Contents/Resources (DAEMONS.md Phase 4). Returns None if not embedded
-    (dev/unfrozen runs have no frozen daemon binaries at all)."""
+    (dev/unfrozen runs have no frozen daemon binaries at all).
+
+    The executable is wrapped in its own minimal .app bundle (see
+    `DAEMON_APP_INFO`) so it has a CFBundleName for macOS's Background
+    Items UI -- this resolves the nested Contents/MacOS/<name> path, not a
+    bare Contents/Resources/<name> path.
+    """
     resources = _frozen_resources_dir()
     if resources is None:
         return None
-    candidate = resources / name
+    app_info = DAEMON_APP_INFO.get(name)
+    if app_info is None:
+        candidate = resources / name
+        return candidate if candidate.exists() else None
+    candidate = resources / app_info["app_name"] / "Contents" / "MacOS" / name
     return candidate if candidate.exists() else None
 
 
