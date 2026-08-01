@@ -42,7 +42,9 @@ def register_issuer_watch(settings) -> bool:
     base = settings.server_base or keystore.SERVER_BASE
 
     try:
-        hby = habbing.Habery(name=settings.server_name, base=base, temp=False)
+        hby = habbing.Habery(
+            name=settings.server_name, base=base, bran=keystore.load_or_create_bran(), temp=False
+        )
     except Exception:
         logger.exception("daemon_watch: could not open guardian Habery")
         return False
