@@ -18,34 +18,13 @@ from pathlib import Path
 from keri import help
 
 from . import keystore
+from .daemon_app_info import DAEMON_APP_INFO
 
 logger = help.ogler.getLogger(__name__)
 
 _RESOURCES_LAUNCHD_DIR = Path(__file__).resolve().parents[1] / "resources" / "launchd"
 
 _PLACEHOLDER_RE = re.compile(r"\{[A-Z_]+\}")
-
-# The daemon executables are embedded wrapped in a minimal .app bundle
-# (Contents/MacOS/<executable>, Contents/Info.plist) rather than as bare
-# Mach-O binaries directly under Contents/Resources. A bare signed
-# executable has no CFBundleName/CFBundleDisplayName for macOS's Background
-# Items / Login Items UI to show, so it falls back to the code signature's
-# Common Name -- the developer's own name on the Developer ID Application
-# cert -- as the displayed name. Wrapping in a bundle with its own
-# CFBundleName fixes that. `locksmith/scripts/embed_daemons.py` builds these
-# bundles at package time using this same mapping.
-DAEMON_APP_INFO = {
-    "kg-guardian": {
-        "app_name": "KERIGuardGuardian.app",
-        "bundle_name": "KERIGuard Guardian",
-        "bundle_id": "com.healthkeri.keriguard.guardian",
-    },
-    "sentinel-daemon": {
-        "app_name": "KERIGuardSentinel.app",
-        "bundle_name": "KERIGuard Sentinel",
-        "bundle_id": "com.healthkeri.keriguard.sentinel",
-    },
-}
 
 
 def is_frozen_macos() -> bool:
