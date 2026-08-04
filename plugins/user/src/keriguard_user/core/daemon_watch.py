@@ -19,16 +19,19 @@ from . import keystore
 
 logger = help.ogler.getLogger(__name__)
 
-CONNECT_RETRIES = 5
+CONNECT_RETRIES = 12
 CONNECT_RETRY_DELAY_S = 3.0
+# The daemon is a PyInstaller onefile bootloader: every launch self-extracts
+# its bundled Python.framework to a fresh temp dir before any application
+# code (including the socket listener) runs. Observed cold-start latency
+# during Phase 4.5 manual verification was ~17s before the socket appeared;
+# the retry budget above (36s) keeps margin above that on slower disks.
 
 
 def register_issuer_watch(settings) -> bool:
-    """Open the guardian Habery, connect to the sentinel daemon's watcher
+    """Open the guardian Habery, connect to the sentinel daemon's watcher  
     socket, and register the issuer AID (and the guardian's own AID) for
-    watching.
-
-    Blocking (KERI keystore open + socket I/O) -- callers must invoke via
+    watching. Blocking (KERI keystore open + socket I/O) -- callers must invoke via
     `loop.run_in_executor(None, ...)`. Safe to call repeatedly: watch
     requests are idempotent server-side (`sentinel/framework/watching.py`).
     """

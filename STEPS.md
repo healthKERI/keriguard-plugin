@@ -52,5 +52,13 @@
     - Create a peer1 vault along with a healthKERI account identity. Create a healthKERI account with the identity. proceed through /Users/arilieb/healthkeri/keriguard-plugin/plugins/user/src/keriguard_user/setup/page.py, using the config file saved through the admin plugin, set the wireguard config export directory, then attempt to initialize. The initialization appears successful according to the UI but the following occurs in the logs.
         - Use /Users/arilieb/keriguard-admin-export/sentinel-config.yaml for user config file, and /Users/arilieb/keriguard for wireguard config dir.
     - Return to admin plugin in admin vault and access /Users/arilieb/healthkeri/keriguard-plugin/plugins/admin/src/keriguard_admin/machines/view.py for the machine that was created. Click the "Issue IP Address" button, which appears to issue successfully.
-    - Return to the user plugin in the peer1 vault and the machine credential is autopopulated but inactive in /Users/arilieb/healthkeri/keriguard-plugin/plugins/user/src/keriguard_user/machines/list.py.
+    - Return to the user plugin in the peer1 vault and the machine credential is autopopulated and active in /Users/arilieb/healthkeri/keriguard-plugin/plugins/user/src/keriguard_user/machines/list.py.
 - Also, the 2 items (kg-guardian and sentinel) still appear under "Ari Lieb Francois Argoud" in Settings -> General -> Login Items & Extensions -> Allow In Background, which ws supposed to have been addressed.
+
+### Diagnostic Commands
+
+Start with low value for -n flag and increase if indicated
+- tail -n 3 ~/Library/Application\ Support/KERIGuard/logs/guardian.stderr.log
+- tail -n 3 ~/Library/Application\ Support/KERIGuard/logs/sentinel.stderr.log
+- head -n 3 ~/Library/Application\ Support/KERIGuard/logs/guardian.stderr.log
+- head -n 3 ~/Library/Application\ Support/KERIGuard/logs/sentinel.stderr.log 
