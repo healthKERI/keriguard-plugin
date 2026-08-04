@@ -36,6 +36,9 @@ from keri import help
 from keri.app import connecting, habbing
 from keri.core import parsing
 
+from keriguard.core.initializing import load_schema
+from keriguard.core.wireguarding import SCHEMA_OOBIS, Schema
+
 from . import keystore
 
 logger = help.ogler.getLogger(__name__)
@@ -106,6 +109,28 @@ def bootstrap_server_identity(
         logger.exception(f"bootstrap_server_identity: could not open Habery {sentinel_name!r}: {exc}")
         server_hby.close()
         return {"success": False, "error": str(exc)}
+
+    # Pin the credential schemas into both Haberies -- mirroring `kg guardian
+    # up`'s `for hby in (sentinel_hby, keriguard_hby): load_schema(...)` step
+    # (`up.py:170-180`). Without this, the guardian daemon's own `hby.db`
+    # (reopened later via `--base plugins/keriguard-user`, i.e. `server_hby`)
+    # never has the schemas the Verifier needs, and credential finalization
+    # loops forever on `MissingSchemaError`.
+    for hby in (sentinel_hby, server_hby):
+        for schema_said in (Schema.INTERFACE_SCHEMA, Schema.CONNECTION_SCHEMA):
+            try:
+                if not load_schema(
+                    hby=hby,
+                    schema_oobi=SCHEMA_OOBIS[schema_said],
+                    schema_said=schema_said,
+                ):
+                    logger.warning(
+                        f"bootstrap_server_identity: failed to pin schema {schema_said} into {hby.name!r}"
+                    )
+            except Exception:
+                logger.exception(
+                    f"bootstrap_server_identity: error pinning schema {schema_said} into {hby.name!r}"
+                )
 
     try:
         # Cross-register the sentinel's inception event into the guardian's

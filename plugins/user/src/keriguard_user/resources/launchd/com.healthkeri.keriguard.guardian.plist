@@ -33,6 +33,13 @@
         <string>--loglevel</string>
         <string>INFO</string>
     </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>ARCHIMEDES_ENVIRONMENT</key>
+        <string>{ARCHIMEDES_ENVIRONMENT}</string>
+        <key>LOCKSMITH_ENVIRONMENT</key>
+        <string>{LOCKSMITH_ENVIRONMENT}</string>
+    </dict>
     <key>RunAtLoad</key>
     <true/>
     <key>KeepAlive</key>

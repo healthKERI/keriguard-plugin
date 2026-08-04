@@ -104,6 +104,8 @@ def launch_sentinel_daemon(settings) -> bool:
         "PASSCODE_FILE": str(keystore.BRAN_PATH),
         "STDOUT_LOG": str(keystore.LOGS_DIR / "sentinel.stdout.log"),
         "STDERR_LOG": str(keystore.LOGS_DIR / "sentinel.stderr.log"),
+        "ARCHIMEDES_ENVIRONMENT": os.environ.get("ARCHIMEDES_ENVIRONMENT", ""),
+        "LOCKSMITH_ENVIRONMENT": os.environ.get("LOCKSMITH_ENVIRONMENT", ""),
     }
 
     try:

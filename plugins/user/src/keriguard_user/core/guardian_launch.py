@@ -12,6 +12,8 @@ handshake and never read back at daemon start time.
 """
 from __future__ import annotations
 
+import os
+
 from keri import help
 
 from . import keystore
@@ -73,6 +75,8 @@ def launch_guardian_daemon(settings) -> bool:
         "HEARTBEAT_FILE": str(keystore.GUARDIAN_HEARTBEAT_PATH),
         "STDOUT_LOG": str(keystore.LOGS_DIR / "guardian.stdout.log"),
         "STDERR_LOG": str(keystore.LOGS_DIR / "guardian.stderr.log"),
+        "ARCHIMEDES_ENVIRONMENT": os.environ.get("ARCHIMEDES_ENVIRONMENT", ""),
+        "LOCKSMITH_ENVIRONMENT": os.environ.get("LOCKSMITH_ENVIRONMENT", ""),
     }
 
     try:
