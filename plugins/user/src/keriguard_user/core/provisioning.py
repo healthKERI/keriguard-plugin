@@ -153,6 +153,19 @@ def bootstrap_server_identity(
             pre=sentinel_hab.pre, data=dict(alias=sentinel_alias)
         )
 
+        # ... and the reverse: without this, the sentinel identity's local db
+        # has no record that the guardian identity exists, so any reply the
+        # guardian daemon signs and sends to the sentinel daemon's watcher
+        # socket (`daemon_watch.register_issuer_watch`) is unverifiable and
+        # escrows forever ("escrowing without key state for signer") -- the
+        # one-directional cross-registration above was not enough for the
+        # daemons to trust each other's signed traffic in both directions.
+        icp2 = server_hab.makeOwnEvent(sn=0)
+        parsing.Parser().parse(ims=bytearray(icp2), kvy=sentinel_hab.kvy)
+        connecting.Organizer(hby=sentinel_hby).update(
+            pre=server_hab.pre, data=dict(alias=alias)
+        )
+
         from sentinel.framework.connecting import connect_to_healthkeri
 
         connect_result = asyncio.run(
