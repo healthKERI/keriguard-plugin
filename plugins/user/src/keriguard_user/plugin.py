@@ -235,8 +235,17 @@ class KERIGuardUserPlugin(PluginBase, AccountProviderPlugin):
           retried on the next poll interval.
         - Interface credentials are always applied before connection credentials
           so the .conf file exists before a peer is appended to it.
+
+        Credential *polling* (into vault.rgy, for UI display and to de-escrow
+        against up-to-date issuer keystate) always runs here regardless of
+        daemon state -- only the *apply* step (writing WireGuard .conf files
+        and driving KERIGuardHelper) is skipped, and only when this vault is
+        the one whose guardian daemon is confirmed alive (`settings.owns_daemon`,
+        set by `_launch_daemons`); every other vault -- and every unfrozen/dev
+        run, where `owns_daemon` is always False -- keeps applying in-process.
         """
         from keriguard.core.wireguarding import Schema
+        from .core.guardian_check import is_guardian_alive
 
         _applied: set[str] = set()
 
@@ -282,19 +291,30 @@ class KERIGuardUserPlugin(PluginBase, AccountProviderPlugin):
                         f"KERIGuardUserPlugin: {len(pending)} credential(s) pending apply"
                     )
 
-                refreshed = False
-                for said in pending:
-                    result = await self._applier.apply(said)
-                    if result == "applied":
-                        _applied.add(said)
-                        refreshed = True
-                    else:
-                        logger.debug(
-                            f"KERIGuardUserPlugin: apply {said[:16]}… → {result} (will retry)"
-                        )
+                daemon_owns_apply = bool(
+                    getattr(settings, "owns_daemon", False) and is_guardian_alive()
+                )
 
-                if refreshed:
-                    self._refresh_list_pages()
+                if daemon_owns_apply:
+                    if pending:
+                        logger.debug(
+                            f"KERIGuardUserPlugin: {len(pending)} credential(s) pending; "
+                            f"this vault's guardian daemon is alive, deferring apply to it"
+                        )
+                else:
+                    refreshed = False
+                    for said in pending:
+                        result = await self._applier.apply(said)
+                        if result == "applied":
+                            _applied.add(said)
+                            refreshed = True
+                        else:
+                            logger.debug(
+                                f"KERIGuardUserPlugin: apply {said[:16]}… → {result} (will retry)"
+                            )
+
+                    if refreshed:
+                        self._refresh_list_pages()
 
             except asyncio.CancelledError:
                 break
@@ -359,21 +379,58 @@ class KERIGuardUserPlugin(PluginBase, AccountProviderPlugin):
         """Bootstrap the guardian/sentinel launchd agents and register the
         issuer AID with the now-running sentinel daemon (DAEMONS.md Phase 3).
 
+        The guardian/sentinel launchd agents are machine-singleton (fixed
+        launchd labels, one shared plist/config.yaml per user account --
+        `keystore.GUARDIAN_AGENT_LABEL`/`SENTINEL_AGENT_LABEL`), even though
+        every vault provisions its own distinct guardian/sentinel identity.
+        `launchctl bootstrap` on an already-loaded label is a no-op that
+        silently keeps the *first* vault's identity running -- so re-writing
+        the plist/config.yaml for a second vault would just leave stale,
+        misleading files on disk, and `register_issuer_watch` would burn its
+        full retry budget against a socket path keyed to a sentinel_aid that
+        was never actually started. Guard both by checking launchd install
+        state first: only the first vault to reach this point actually
+        launches anything; every later vault (and every unfrozen/dev run,
+        where neither daemon is ever launched) relies entirely on its own
+        in-process KEL watcher + credential poller/applier instead.
+
         No-op on non-macOS/unfrozen (dev) runs -- see `is_frozen_macos()`.
-        Safe to call on every fresh initialization: `launchctl bootstrap` on
-        an already-loaded label and watch registration are both idempotent.
         """
         loop = asyncio.get_event_loop()
 
         from .core.sentinel_launch import launch_sentinel_daemon
         from .core.guardian_launch import launch_guardian_daemon
+        from .core.guardian_check import is_guardian_installed
+        from .core.sentinel_check import is_sentinel_installed
         from .core.daemon_watch import register_issuer_watch
 
-        sentinel_ok = await loop.run_in_executor(None, launch_sentinel_daemon, settings)
-        await loop.run_in_executor(None, launch_guardian_daemon, settings)
+        sentinel_already_running = await loop.run_in_executor(None, is_sentinel_installed)
+        if sentinel_already_running:
+            logger.info(
+                "KERIGuardUserPlugin: sentinel daemon already running under another "
+                "vault's identity; this vault relies on its in-process KEL watcher instead"
+            )
+        else:
+            sentinel_ok = await loop.run_in_executor(None, launch_sentinel_daemon, settings)
+            if sentinel_ok:
+                await loop.run_in_executor(None, register_issuer_watch, settings)
 
-        if sentinel_ok:
-            await loop.run_in_executor(None, register_issuer_watch, settings)
+        guardian_already_running = await loop.run_in_executor(None, is_guardian_installed)
+        if guardian_already_running:
+            logger.info(
+                "KERIGuardUserPlugin: guardian daemon already running under another "
+                "vault's identity; this vault relies on in-process credential apply instead"
+            )
+            guardian_ok = False
+        else:
+            guardian_ok = await loop.run_in_executor(None, launch_guardian_daemon, settings)
+
+        owns_daemon = bool(guardian_ok)
+        if owns_daemon != getattr(settings, "owns_daemon", False):
+            settings.owns_daemon = owns_daemon
+            self._db.keriguardUserSettings.pin(keys=("settings",), val=settings)
+            if self._app and self._app.vault:
+                self._app.vault.plugin_state["keriguard_user"]["settings"] = settings
 
     def _on_keriguard_menu_opened(self) -> None:
         """Runs each time the KERIGuard menu entry is opened: verifies the
