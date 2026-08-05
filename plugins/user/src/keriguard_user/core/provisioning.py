@@ -153,19 +153,6 @@ def bootstrap_server_identity(
             pre=sentinel_hab.pre, data=dict(alias=sentinel_alias)
         )
 
-        # ... and the reverse: without this, the sentinel identity's local db
-        # has no record that the guardian identity exists, so any reply the
-        # guardian daemon signs and sends to the sentinel daemon's watcher
-        # socket (`daemon_watch.register_issuer_watch`) is unverifiable and
-        # escrows forever ("escrowing without key state for signer") -- the
-        # one-directional cross-registration above was not enough for the
-        # daemons to trust each other's signed traffic in both directions.
-        icp2 = server_hab.makeOwnEvent(sn=0)
-        parsing.Parser().parse(ims=bytearray(icp2), kvy=sentinel_hab.kvy)
-        connecting.Organizer(hby=sentinel_hby).update(
-            pre=server_hab.pre, data=dict(alias=alias)
-        )
-
         from sentinel.framework.connecting import connect_to_healthkeri
 
         connect_result = asyncio.run(
@@ -179,6 +166,32 @@ def bootstrap_server_identity(
                 witness=witness,
             )
         ) or {}
+
+        # ... and the reverse: without this, the sentinel identity's local db
+        # has no record that the guardian identity exists, so any reply the
+        # guardian daemon signs and sends to the sentinel daemon's watcher
+        # socket (`daemon_watch.register_issuer_watch`) is unverifiable and
+        # escrows forever ("escrowing without key state for signer") -- the
+        # one-directional cross-registration above was not enough for the
+        # daemons to trust each other's signed traffic in both directions.
+        #
+        # This must run *after* `connect_to_healthkeri` returns, not before:
+        # when `witness=True`, that call rotates `server_hab` (sn 0 -> 1) via
+        # `rotate_witness`, so registering only the sn=0 icp beforehand left
+        # the sentinel daemon's kvy permanently unaware of the guardian's
+        # post-rotation key state -- every reply the guardian signs afterward
+        # (sn=1) escrowed forever, since nothing re-synced the rotation event.
+        # Replay the guardian's *current* full KEL (icp + any rotation, e.g.
+        # from `rotate_witness` above), not just the icp, via `clonePreIter`
+        # -- `replyToOobi` only returns end-role reply messages, not KEL
+        # events, so it would not actually convey the rotation.
+        server_kel = bytearray()
+        for msg in server_hab.db.clonePreIter(pre=server_hab.pre):
+            server_kel.extend(msg)
+        parsing.Parser().parse(ims=server_kel, kvy=sentinel_hab.kvy)
+        connecting.Organizer(hby=sentinel_hby).update(
+            pre=server_hab.pre, data=dict(alias=alias)
+        )
     except Exception as exc:
         logger.exception(f"bootstrap_server_identity: registration with healthKERI failed: {exc}")
         return {"success": False, "error": str(exc)}
