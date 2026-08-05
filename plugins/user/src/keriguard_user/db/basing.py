@@ -35,6 +35,13 @@ class KERIGuardUserSettings:
     server_alias: str = ""
     server_base: str = ""
     server_aid: str = ""
+    # Witness-mediated OOBI for the guardian AID itself (cid=server_aid,
+    # not the witness's own self-OOBI), resolved into the vault's own `hby`
+    # at Setup time (mirroring issuer_aid/issuer_oobi above) so the vault
+    # gets the guardian's KEL into its kevers and can track
+    # the guardian AID as its "interface" identity independent of the
+    # daemon's own (separate) Habery.
+    server_oobi: str = ""
     sentinel_name: str = ""
     sentinel_alias: str = ""
     sentinel_aid: str = ""

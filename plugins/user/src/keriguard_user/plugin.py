@@ -190,6 +190,15 @@ class KERIGuardUserPlugin(PluginBase, AccountProviderPlugin):
             if settings.issuer_aid:
                 self._watcher.watch(settings.issuer_aid)
 
+            # Register the guardian AID for watching too — its KEL is
+            # resolved into vault.hby at Setup time via settings.server_oobi
+            # (a witness-mediated OOBI for server_aid, see setup/page.py),
+            # which is the precondition Watcher.watch()/Sentinel.watch()
+            # need (sentinel/core/witnessing.py: "Unable to watch unknown
+            # aid" if the AID isn't already in hby.kevers).
+            if getattr(settings, "server_aid", ""):
+                self._watcher.watch(settings.server_aid)
+
             # Honour the configured kel_watch_interval
             self._watcher.start()
             if self._watcher.sentinel_launcher:

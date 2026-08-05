@@ -505,6 +505,15 @@ class SetupPage(LocksmithFormPage):
             server_identity["server_aid"][:20] + "…"
         )
 
+        # 5b. Resolve the guardian's witness-mediated OOBI into the vault's
+        # own hby -- mirroring the issuer OOBI resolution above -- so the
+        # vault gets the guardian AID's KEL into its own kevers (a
+        # precondition for the in-process Watcher to watch it) and can
+        # independently track it as its "interface" identity.
+        guardian_oobi = server_identity.get("guardian_oobi", "")
+        if guardian_oobi:
+            await loop.run_in_executor(None, load_oobi, vault.hby, guardian_oobi, "guardian")
+
         # 6. Save settings
         from keriguard_user.db.basing import KERIGuardUserSettings
         kg_user_db = vault.plugin_state.get("keriguard_user", {}).get("db")
@@ -526,6 +535,7 @@ class SetupPage(LocksmithFormPage):
             server_alias=server_identity["server_alias"],
             server_base=server_identity["server_base"],
             server_aid=server_identity["server_aid"],
+            server_oobi=guardian_oobi,
             sentinel_name=server_identity["sentinel_name"],
             sentinel_alias=server_identity["sentinel_alias"],
             sentinel_aid=server_identity["sentinel_aid"],
@@ -613,6 +623,8 @@ class SetupPage(LocksmithFormPage):
             "sentinel_name": result["sentinel_name"],
             "sentinel_alias": result["sentinel_alias"],
             "sentinel_aid": result["sentinel_aid"],
+            "guardian_oobi": result.get("guardian_oobi", ""),
+            "witness_name": result.get("witness_name", ""),
         }
 
     async def _load_schemas(self, vault, loop):

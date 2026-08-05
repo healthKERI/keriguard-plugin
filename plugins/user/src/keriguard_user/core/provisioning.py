@@ -91,6 +91,14 @@ def bootstrap_server_identity(
     `load_oobi`). Never raises; failures come back as
     `{"success": False, "error": str}`.
 
+    On success the returned dict also carries `witness_aid`/`witness_name`/
+    `witness_oobi` for the guardian's witness (empty strings when
+    `witness=False`) -- callers resolve this OOBI into the *vault's own*
+    `hby` (mirroring the existing `issuer_aid`/`issuer_oobi` pattern) so the
+    vault can independently track the guardian AID as its "interface"
+    identity. `connect_to_healthkeri` already resolves this same OOBI into
+    `server_hby` internally; that's a separate Habery from the vault's own.
+
     `auth_code` is used once, in-memory, to authenticate the registration
     request -- callers must not persist, log, or otherwise retain it.
     """
@@ -147,7 +155,7 @@ def bootstrap_server_identity(
 
         from sentinel.framework.connecting import connect_to_healthkeri
 
-        asyncio.run(
+        connect_result = asyncio.run(
             connect_to_healthkeri(
                 server_name=name,
                 sentinel_hby=sentinel_hby,
@@ -157,7 +165,7 @@ def bootstrap_server_identity(
                 server_hab=server_hab,
                 witness=witness,
             )
-        )
+        ) or {}
     except Exception as exc:
         logger.exception(f"bootstrap_server_identity: registration with healthKERI failed: {exc}")
         return {"success": False, "error": str(exc)}
@@ -175,4 +183,16 @@ def bootstrap_server_identity(
         "sentinel_name": sentinel_name,
         "sentinel_alias": sentinel_alias,
         "sentinel_aid": sentinel_hab.pre,
+        # The guardian's own witness -- resolved into `server_hby` above by
+        # `connect_to_healthkeri`. `witness_oobi` is the witness's *own*
+        # self-OOBI (cid=witness_aid); it does not resolve the guardian's
+        # KEL if loaded elsewhere. `guardian_oobi` is the witness-mediated
+        # OOBI for `server_hab.pre` itself (cid=server_aid) -- callers must
+        # `load_oobi` *this* one into `vault.hby` (mirroring the existing
+        # issuer_aid/issuer_oobi pattern) to get the guardian AID's KEL into
+        # the vault's own kevers, a precondition for watching it.
+        "witness_aid": connect_result.get("witness_aid", ""),
+        "witness_name": connect_result.get("witness_name", ""),
+        "witness_oobi": connect_result.get("witness_oobi", ""),
+        "guardian_oobi": connect_result.get("guardian_oobi", ""),
     }
