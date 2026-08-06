@@ -10,6 +10,8 @@ from keriguard.app.sentinel.services.cred_service import CredService
 from keriguard.core.systeming import WireGuardNotApprovedError
 from keriguard.core.wireguarding import Schema, PeerResolutionPendingError
 
+from . import keystore
+
 if TYPE_CHECKING:
     pass
 
@@ -45,6 +47,11 @@ class WireGuardApplier:
             config_dir=config_dir,
             hab=watcher_hab,
             sentinel_aid=watcher_hab.pre,
+            # Must match the sentinel daemon's own --socket-dir
+            # (sentinel_launch.py/guardian_launch.py) -- otherwise this
+            # in-process applier's peer-AID resolution retries dial the
+            # unrelocated /tmp default and never reach the real socket.
+            socket_dir=str(keystore.SENTINEL_SOCKET_DIR),
         )
 
     def set_essr(self, essr) -> None:

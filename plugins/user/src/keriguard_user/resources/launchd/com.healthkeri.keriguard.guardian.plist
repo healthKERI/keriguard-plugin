@@ -26,6 +26,8 @@
         <string>{SENTINEL_EXPORT_DIR}</string>
         <string>--config-dir</string>
         <string>{CONFIG_DIR}</string>
+        <string>--socket-dir</string>
+        <string>{SOCKET_DIR}</string>
         <string>--passcode-file</string>
         <string>{PASSCODE_FILE}</string>
         <string>--heartbeat-file</string>

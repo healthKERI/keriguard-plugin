@@ -71,6 +71,10 @@ def launch_guardian_daemon(settings) -> bool:
         "SENTINEL_AID": settings.sentinel_aid,
         "SENTINEL_EXPORT_DIR": settings.export_dir or str(keystore.DEFAULT_EXPORT_DIR),
         "CONFIG_DIR": settings.config_dir,
+        # Must match the sentinel daemon's own --socket-dir (sentinel_launch.py)
+        # -- otherwise the guardian's peer-AID resolution retries dial the
+        # unrelocated /tmp default and never reach the real socket.
+        "SOCKET_DIR": str(keystore.SENTINEL_SOCKET_DIR),
         "PASSCODE_FILE": str(keystore.BRAN_PATH),
         "HEARTBEAT_FILE": str(keystore.GUARDIAN_HEARTBEAT_PATH),
         "STDOUT_LOG": str(keystore.LOGS_DIR / "guardian.stdout.log"),
