@@ -18,8 +18,9 @@
     - rm -rf ~/Library/Application\ Support/KERIGuard
     - rm -f ~/Library/LaunchAgents/com.healthkeri.keriguard.{guardian,sentinel}.plist
 6. Clear keri databases:
-    - rm -rf /usr/local/var/keri/*
+    - rm -rf /usr/local/var/keri/*; rm -rf ~/keriguard/*; rm -rf ~/.keriguard/*
     - rm -rf ~/.keriguard/*
+    - rm -rf ~/keriguard/*
 7. Run `docker compose down -v` from nightingale if the docker container is up
 8. restart the computer
 9. Download fully built app .dmg off of DO
@@ -46,14 +47,16 @@
         - `/Applications/KERIGuard.app/Contents/MacOS/KERIGuard > /tmp/KERIGuard.log 2>&1`
     - Terminal 2:
         - `tail -f /tmp/KERIGuard.log`
-- From the Keriguard app:
-    - First we create an admin vault along with an admin identity and a healthKERI account identity. Create a healthKERI account with the identity and upload the admin identity, then provision a witness for it. Navigate to the keriguard admin plugin and select admin identity as the issuer and set the export directory, then complete the setup. Provision a machine (/Users/arilieb/healthkeri/keriguard-plugin/plugins/admin/src/keriguard_admin/machines/add.py) and save the config file. Exit the vault
-        - Use /Users/arilieb/keriguard-admin-export/ for admin export dir in setup
-    - Create a peer1 vault along with a healthKERI account identity. Create a healthKERI account with the identity. proceed through /Users/arilieb/healthkeri/keriguard-plugin/plugins/user/src/keriguard_user/setup/page.py, using the config file saved through the admin plugin, set the wireguard config export directory, then attempt to initialize. The initialization appears successful according to the UI but the following occurs in the logs.
-        - Use /Users/arilieb/keriguard-admin-export/sentinel-config.yaml for user config file, and /Users/arilieb/keriguard for wireguard config dir.
-    - Return to admin plugin in admin vault and access /Users/arilieb/healthkeri/keriguard-plugin/plugins/admin/src/keriguard_admin/machines/view.py for the machine that was created. Click the "Issue IP Address" button, which appears to issue successfully.
-    - Return to the user plugin in the peer1 vault and the machine credential is autopopulated and active in /Users/arilieb/healthkeri/keriguard-plugin/plugins/user/src/keriguard_user/machines/list.py.
-- Also, the 2 items (kg-guardian and sentinel) still appear under "Ari Lieb Francois Argoud" in Settings -> General -> Login Items & Extensions -> Allow In Background, which ws supposed to have been addressed.
+## UI Steps
+1. From the Keriguard app: First we create an admin vault along with an admin identity and a healthKERI account identity. Create a healthKERI account with the identity and upload the admin identity, then provision a witness for it. 
+2. Navigate to the keriguard admin plugin and select admin identity as the issuer and set the export directory, then complete the setup. 
+3. Provision a machine (/Users/arilieb/healthkeri/keriguard-plugin/plugins/admin/src/keriguard_admin/machines/add.py) and save the config file. Exit the vault
+4. Create a peer1 vault along with a healthKERI account identity. Create a healthKERI account with the identity. proceed through /Users/arilieb/healthkeri/keriguard-plugin/plugins/user/src/keriguard_user/setup/page.py, using the config file saved through the admin plugin, set the wireguard config export directory, then attempt to initialize. The initialization appears successful according to the UI but the following occurs in the logs.
+5. Return to admin plugin in admin vault and access /Users/arilieb/healthkeri/keriguard-plugin/plugins/admin/src/keriguard_admin/machines/view.py for the machine that was created. Click the "Issue IP Address" button to issue the interface credential
+6. Return to the user plugin in the peer1 vault and the machine credential is autopopulated and active in /Users/arilieb/healthkeri/keriguard-plugin/plugins/user/src/keriguard_user/machines/list.py.
+7. Repeat steps 3-6 for a new peer2 vault
+8. Provision a connection credential between both peers (/Users/arilieb/healthkeri/keriguard-plugin/plugins/admin/src/keriguard_admin/connections/connect.py)
+NOTE: The 2 items Return to admin plugin in admin vault and access /Users/arilieb/healthkeri/keriguard-plugin/plugins/admin/src/keriguard_admin/machines/view.py for the machine that was created. Click the "Issue IP Address" button(kg-guardian and sentinel) still appear under "Ari Lieb Francois Argoud" in Settings -> General -> Login Items & Extensions -> Allow In Background, which ws supposed to have been addressed.
 
 ### Diagnostic Commands
 
