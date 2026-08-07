@@ -345,7 +345,21 @@ The job's `is-healthkeri` gate (`release.ci.yml:190-195`) keeps these fork-cut r
      - `guardian/up.py`'s own independent `LocalWatcherConnector(keriguard_hby, keriguard_hab, sentinel_hab.pre)` call (a second, pre-existing instance of the same bug class) was intentionally left as-is: it's the Linux/systemd `up` flow, which never relocates the socket off `/tmp`, so its unparameterized default is already correct there — threading `--socket-dir` through it would be scope creep with no behavioral fix attached.
    - **Not yet verified against a live daemon** — needs a repeat of the peer1/peer2 connection-credential manual test (the one that originally surfaced this bug) against a rebuilt fork-cut binary, to confirm the guardian's peer-AID resolution retry now actually reaches the relocated sentinel socket instead of failing with `ConnectionError`.
 
----
+7. **Implemented the server_kel-refresh fix across two repos**
+   - correctly targeted at the protected hkweb app (I confirmed mid-implementation that setup() and setup_accounts() are two entirely separate Falcon apps with two separate Haberies:
+    - hkweb (hksvc/core/services/team_service.py, hkapi/app/api/team.py):
+    - Extracted add_server_to_team's KEL-parsing logic into TeamService._resolve_kel, and added TeamService.update_server_kel(team_id, server_aid, server_kel) — reachable any time via essr auth, not gated by  
+      the one-time server_auth_code.
+    - Added on_put to SecureTeamServerResourceEnd (already mounted at /servers/{machine_id} in the protected app, sharing RegistrarService's hby) accepting a server_kel multipart part, with team-ownership and
+      server_aid-presence checks.
+    - 13 new tests (5 service-level, 8 endpoint-level), all passing; full suite 513/513 green (one pre-existing, unrelated collection error ignored).
+    
+   - sentinel (sentinel/framework/connecting.py):
+     - After rotate_witness completes, PUT the guardian's full post-rotation KEL (clonePreIter, not replyToOobi) to /servers/{sentinel_hab.pre} via the already-authenticated essr client. Best-effort/non-fatal —
+       a sync failure doesn't fail provisioning, since the guardian AID itself is already correctly witnessed.
+     - Added 2 new tests verifying the exact path/method/payload and confirming failure doesn't propagate. Full suite 233/233 green (231 pre-existing + 2 new; also fixed a local-env gap — sentinel's venv was   
+       missing pyotp, same class of issue DAEMONS.md already noted elsewhere).
+     ---
 
 ## Dev-mode daemons and retiring the in-process guardian fallback
 
