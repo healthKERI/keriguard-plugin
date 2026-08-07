@@ -36,7 +36,6 @@ class KERIGuardUserPlugin(PluginBase, AccountProviderPlugin):
         self._db: KERIGuardUserBaser | None = None
         self._kgb = None
         self._poller = None
-        self._applier = None
         self._watcher = None
         self._sentinel_db = None
         self._poll_task: asyncio.Task | None = None
@@ -123,7 +122,6 @@ class KERIGuardUserPlugin(PluginBase, AccountProviderPlugin):
         essr = self._build_essr(vault)
 
         from .core.fetching import CredentialPoller
-        from .core.applying import WireGuardApplier
 
         self._poller = CredentialPoller(
             hby=vault.hby,
@@ -133,28 +131,10 @@ class KERIGuardUserPlugin(PluginBase, AccountProviderPlugin):
             essr=essr,
         )
 
-        # Start the watcher first so its parser is available for peer OOBI resolution
-        # in WireGuardApplier._resolve_peer_aids.
+        # KEL watching (issuer + guardian keystate, for viewing/de-escrow) is
+        # independent of credential apply, which is now handled exclusively
+        # by the guardian daemon (dev or prod) -- see plugin.py module docs.
         self._start_watcher(vault, watcher_hab, settings)
-
-        registrar_url = (
-            settings.registrar_url
-            if settings.credential_source == "registrar"
-            else None
-        )
-        self._applier = WireGuardApplier(
-            hby=vault.hby,
-            rgy=vault.rgy,
-            kgb=self._kgb,
-            config_dir=settings.config_dir,
-            watcher_hab=watcher_hab,
-            registrar_url=registrar_url,
-            watcher=self._watcher,
-            credential_source=settings.credential_source,
-            essr=essr,
-        )
-
-        vault.plugin_state["keriguard_user"]["applier"] = self._applier
 
         self._poll_task = asyncio.create_task(
             self._startup_and_poll(vault, settings),
@@ -162,7 +142,6 @@ class KERIGuardUserPlugin(PluginBase, AccountProviderPlugin):
         )
 
     def _start_watcher(self, vault: "Vault", watcher_hab, settings) -> None:
-        from pathlib import Path
         try:
             from sentinel.core.witnessing import Watcher
             from sentinel.db.basing import SentinelBaser
@@ -171,10 +150,12 @@ class KERIGuardUserPlugin(PluginBase, AccountProviderPlugin):
             return
 
         try:
+            from .core import keystore
+
             sentinel_db_name = f"{vault.hby.name}-watcher"
             self._sentinel_db = SentinelBaser(name=sentinel_db_name, reopen=True)
 
-            export_dir = settings.export_dir or str(Path.home() / ".keri" / "keriguard-kel")
+            export_dir = settings.export_dir or str(keystore.DEFAULT_EXPORT_DIR)
 
             self._watcher = Watcher(
                 db=self._sentinel_db,
@@ -188,6 +169,15 @@ class KERIGuardUserPlugin(PluginBase, AccountProviderPlugin):
             # Register the issuer AID for watching (idempotent — already in db.obvs on re-open)
             if settings.issuer_aid:
                 self._watcher.watch(settings.issuer_aid)
+
+            # Register the guardian AID for watching too — its KEL is
+            # resolved into vault.hby at Setup time via settings.server_oobi
+            # (a witness-mediated OOBI for server_aid, see setup/page.py),
+            # which is the precondition Watcher.watch()/Sentinel.watch()
+            # need (sentinel/core/witnessing.py: "Unable to watch unknown
+            # aid" if the AID isn't already in hby.kevers).
+            if getattr(settings, "server_aid", ""):
+                self._watcher.watch(settings.server_aid)
 
             # Honour the configured kel_watch_interval
             self._watcher.start()
@@ -225,19 +215,19 @@ class KERIGuardUserPlugin(PluginBase, AccountProviderPlugin):
         return None
 
     async def _startup_and_poll(self, vault: "Vault", settings) -> None:
-        """Unified credential-apply loop.
+        """Credential polling loop.
 
-        Tracks which SAIDs have been successfully applied so that:
-        - Credentials already in the registry at startup are picked up even
-          when the embedded sentinel loads them concurrently with this task.
-        - Transient failures ("error", "pending_oobi", "pending_ne_approval") are
-          retried on the next poll interval.
-        - Interface credentials are always applied before connection credentials
-          so the .conf file exists before a peer is appended to it.
+        Pulls credentials into vault.rgy (for the Machines/Connections UI and
+        to de-escrow against up-to-date issuer keystate) and refreshes those
+        list pages whenever something new shows up. Applying credentials to
+        the WireGuard config is no longer done here -- that's exclusively the
+        guardian daemon's job (dev or prod; see `_launch_daemons`), which
+        discovers and applies credentials issued to `server_aid` via its own,
+        independent KEL/TEL watching.
         """
         from keriguard.core.wireguarding import Schema
 
-        _applied: set[str] = set()
+        _seen: set[str] = set()
 
         while True:
             try:
@@ -259,8 +249,6 @@ class KERIGuardUserPlugin(PluginBase, AccountProviderPlugin):
                     essr = self._build_essr(vault)
                     if essr is not None:
                         self._poller.set_essr(essr)
-                        if self._applier is not None:
-                            self._applier.set_essr(essr)
                         logger.info(
                             "KERIGuardUserPlugin: healthKERI account now available, "
                             "SaaS credential polling activated"
@@ -275,24 +263,9 @@ class KERIGuardUserPlugin(PluginBase, AccountProviderPlugin):
                 except Exception as exc:
                     logger.warning(f"KERIGuardUserPlugin: poll error: {exc}")
 
-                pending = [s for s in ordered if s not in _applied]
-                if pending:
-                    logger.debug(
-                        f"KERIGuardUserPlugin: {len(pending)} credential(s) pending apply"
-                    )
-
-                refreshed = False
-                for said in pending:
-                    result = await self._applier.apply(said)
-                    if result == "applied":
-                        _applied.add(said)
-                        refreshed = True
-                    else:
-                        logger.debug(
-                            f"KERIGuardUserPlugin: apply {said[:16]}… → {result} (will retry)"
-                        )
-
-                if refreshed:
+                newly_seen = [s for s in ordered if s not in _seen]
+                if newly_seen:
+                    _seen.update(newly_seen)
                     self._refresh_list_pages()
 
             except asyncio.CancelledError:
@@ -309,6 +282,13 @@ class KERIGuardUserPlugin(PluginBase, AccountProviderPlugin):
                 page.on_show()
 
     def on_vault_closed(self, vault: "Vault") -> None:
+        # Guardian/sentinel daemons are intentionally NOT stopped here --
+        # the whole point of daemonizing them is that they keep applying
+        # credentials in the background independent of this vault being
+        # open. They're stopped only via an explicit user action (Settings
+        # page "Stop Daemons", see `stop_daemons` below) or, for dev-mode
+        # subprocesses, the `atexit` safety net in `core/daemon_launch.py`
+        # when the app process itself exits.
         if self._poll_task and not self._poll_task.done():
             self._poll_task.cancel()
             self._poll_task = None
@@ -350,6 +330,174 @@ class KERIGuardUserPlugin(PluginBase, AccountProviderPlugin):
             settings = self._db.keriguardUserSettings.get(keys=("settings",))
             if settings and settings.is_initialized:
                 self._start_polling(self._app.vault, settings)
+                asyncio.create_task(
+                    self._launch_daemons(settings), name="keriguard_user_daemon_launch"
+                )
+
+    async def _launch_daemons(self, settings) -> None:
+        """Bootstrap the guardian/sentinel daemons and register the issuer
+        AID with the now-running sentinel daemon (DAEMONS.md Phase 3).
+        Called once, from `_on_initialization_done` right after Setup
+        provisions this vault's identity -- not re-triggered on a later
+        vault reopen (daemons are no longer stopped on vault close, so
+        there's nothing to restart there; `start_daemons()` is the manual
+        equivalent, wired to the Settings page's "Start Daemons" button).
+
+        Prod (frozen macOS): the daemons are machine-singleton launchd
+        agents (fixed labels, one shared plist/config.yaml per user account
+        -- `keystore.GUARDIAN_AGENT_LABEL`/`SENTINEL_AGENT_LABEL`), even
+        though every vault provisions its own distinct guardian/sentinel
+        identity. `launchctl bootstrap` on an already-loaded label is a
+        no-op that silently keeps the *first* vault's identity running -- so
+        re-writing the plist/config.yaml for a second vault would just leave
+        stale, misleading files on disk, and `register_issuer_watch` would
+        burn its full retry budget against a socket path keyed to a
+        sentinel_aid that was never actually started. Guard both by checking
+        launchd install state first: only the first vault to reach this
+        point actually launches anything. A non-owning vault (or one where
+        neither daemon is installed yet) only gets credentials *pulled in
+        for viewing* via its own in-process KEL watcher/poller -- applying
+        them to the WireGuard config is exclusively the daemon's job, so a
+        non-owning vault does not apply anything locally.
+
+        Dev (unfrozen macOS, opt-in `KERIGUARD_DEV_DAEMONS=1`): real `kg`/
+        `sentinel` subprocesses, not launchd -- see
+        `daemon_launch.should_use_dev_daemons()` and
+        `guardian_launch.launch_guardian_daemon_dev`/
+        `sentinel_launch.launch_sentinel_daemon_dev`. No-op entirely if the
+        env var isn't set, or off unfrozen/non-macOS or a frozen build.
+        """
+        from .core.daemon_launch import should_use_dev_daemons
+        from .core.daemon_watch import register_issuer_watch
+
+        loop = asyncio.get_event_loop()
+
+        if should_use_dev_daemons():
+            from .core.sentinel_launch import launch_sentinel_daemon_dev
+            from .core.guardian_launch import launch_guardian_daemon_dev
+
+            sentinel_proc = await loop.run_in_executor(None, launch_sentinel_daemon_dev, settings)
+            if sentinel_proc is not None:
+                await loop.run_in_executor(None, register_issuer_watch, settings)
+
+            guardian_proc = await loop.run_in_executor(None, launch_guardian_daemon_dev, settings)
+            guardian_ok = guardian_proc is not None
+        else:
+            from .core.sentinel_launch import launch_sentinel_daemon
+            from .core.guardian_launch import launch_guardian_daemon
+            from .core.guardian_check import is_guardian_installed
+            from .core.sentinel_check import is_sentinel_installed
+
+            sentinel_already_running = await loop.run_in_executor(None, is_sentinel_installed)
+            if sentinel_already_running:
+                logger.info(
+                    "KERIGuardUserPlugin: sentinel daemon already running under another "
+                    "vault's identity; this vault relies on its in-process KEL watcher instead"
+                )
+            else:
+                sentinel_ok = await loop.run_in_executor(None, launch_sentinel_daemon, settings)
+                if sentinel_ok:
+                    await loop.run_in_executor(None, register_issuer_watch, settings)
+
+            guardian_already_running = await loop.run_in_executor(None, is_guardian_installed)
+            if guardian_already_running:
+                logger.info(
+                    "KERIGuardUserPlugin: guardian daemon already running under another "
+                    "vault's identity; this vault will not apply credentials locally"
+                )
+                guardian_ok = False
+            else:
+                guardian_ok = await loop.run_in_executor(None, launch_guardian_daemon, settings)
+
+        owns_daemon = bool(guardian_ok)
+        if owns_daemon != getattr(settings, "owns_daemon", False):
+            settings.owns_daemon = owns_daemon
+            self._db.keriguardUserSettings.pin(keys=("settings",), val=settings)
+            if self._app and self._app.vault:
+                self._app.vault.plugin_state["keriguard_user"]["settings"] = settings
+
+    def start_daemons(self) -> None:
+        """Manually (re)start the guardian/sentinel daemons -- wired to the
+        Settings page's "Start Daemons" button.
+
+        Daemons already launch automatically once, on Setup completion (see
+        `_launch_daemons`'s docstring); this exists so a user who explicitly
+        stopped them (or whose dev-mode daemons died) can bring them back up
+        without redoing Setup, now that closing/reopening the vault no
+        longer starts or stops them on its own."""
+        if not (self._app and self._app.vault) or not self._db:
+            return
+        settings = self._db.keriguardUserSettings.get(keys=("settings",))
+        if not settings or not settings.is_initialized:
+            return
+        asyncio.create_task(
+            self._launch_daemons(settings), name="keriguard_user_daemon_start"
+        )
+
+    def stop_daemons(self) -> None:
+        """Manually stop the guardian/sentinel daemons -- wired to the
+        Settings page's "Stop Daemons" button. Safe no-op if neither is
+        currently running.
+
+        Note: prod (frozen macOS) daemons are machine-wide singletons
+        (DAEMONS.md Phase 3e) -- this stops whichever vault's identity
+        currently owns the daemon slot, not necessarily this vault's own.
+        Dev-mode daemons are namespaced per vault instead (see
+        `keystore.dev_guardian_agent_label`), so this only stops *this*
+        vault's own dev daemons -- hence the settings lookup below."""
+        from .core.daemon_launch import should_use_dev_daemons
+
+        if should_use_dev_daemons():
+            if not self._db:
+                return
+            settings = self._db.keriguardUserSettings.get(keys=("settings",))
+            if not settings:
+                return
+            from .core.guardian_launch import stop_guardian_daemon_dev
+            from .core.sentinel_launch import stop_sentinel_daemon_dev
+
+            stop_guardian_daemon_dev(settings)
+            stop_sentinel_daemon_dev(settings)
+        else:
+            from .core.guardian_launch import stop_guardian_daemon
+            from .core.sentinel_launch import stop_sentinel_daemon
+
+            stop_guardian_daemon()
+            stop_sentinel_daemon()
+
+    def daemons_status(self) -> dict:
+        """Current guardian/sentinel run state, for the Settings page to
+        render. `supported` is False when this build/run can't launch
+        daemons at all (non-macOS, or unfrozen without
+        `KERIGUARD_DEV_DAEMONS=1`) -- Start/Stop should be disabled then."""
+        from .core.daemon_launch import daemons_supported, is_frozen_macos, should_use_dev_daemons
+
+        if should_use_dev_daemons():
+            settings = self._db.keriguardUserSettings.get(keys=("settings",)) if self._db else None
+            if settings:
+                from .core.guardian_launch import is_guardian_dev_running
+                from .core.sentinel_launch import is_sentinel_dev_running
+
+                guardian_running = is_guardian_dev_running(settings)
+                sentinel_running = is_sentinel_dev_running(settings)
+            else:
+                guardian_running = False
+                sentinel_running = False
+        elif is_frozen_macos():
+            from .core.guardian_check import is_guardian_installed
+            from .core.sentinel_check import is_sentinel_installed
+
+            guardian_running = is_guardian_installed()
+            sentinel_running = is_sentinel_installed()
+        else:
+            guardian_running = False
+            sentinel_running = False
+
+        return {
+            "supported": daemons_supported(),
+            "guardian_running": guardian_running,
+            "sentinel_running": sentinel_running,
+        }
 
     def _on_keriguard_menu_opened(self) -> None:
         """Runs each time the KERIGuard menu entry is opened: verifies the
@@ -373,6 +521,26 @@ class KERIGuardUserPlugin(PluginBase, AccountProviderPlugin):
             return
 
         asyncio.create_task(self._run_helper_smoke_test(), name="keriguard_user_helper_smoke_test")
+        self._check_daemon_health()
+
+    def _check_daemon_health(self) -> None:
+        """Logs guardian/sentinel launchd + heartbeat status; no user-facing
+        alert yet (helper checks above already gate the initial nudge)."""
+        from .core.daemon_launch import is_frozen_macos
+
+        if not is_frozen_macos():
+            return
+
+        from .core.guardian_check import is_guardian_installed, is_guardian_alive
+        from .core.sentinel_check import is_sentinel_installed
+
+        if not is_guardian_installed():
+            logger.warning("KERIGuardUserPlugin: guardian daemon not registered with launchd")
+        elif not is_guardian_alive():
+            logger.warning("KERIGuardUserPlugin: guardian daemon heartbeat is stale")
+
+        if not is_sentinel_installed():
+            logger.warning("KERIGuardUserPlugin: sentinel daemon not registered with launchd")
 
     async def _run_helper_smoke_test(self) -> None:
         from .core.helper_check import smoke_test_ipc

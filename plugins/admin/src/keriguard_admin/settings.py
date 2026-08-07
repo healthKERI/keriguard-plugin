@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from keri import help
 from typing import TYPE_CHECKING
+from pathlib import Path
 
 from PySide6.QtWidgets import QLabel, QHBoxLayout, QFileDialog
 

@@ -78,6 +78,23 @@ class ConnectionsListPage(QWidget):
         self.table.row_clicked.connect(self._on_row_clicked)
         self.table.add_clicked.connect(self.import_clicked.emit)
 
+    def _local_aids(self) -> set[str]:
+        """AIDs whose interface credentials should count as "this machine".
+
+        Includes the vault's own habs plus the guardian AID (settings.server_aid),
+        which lives in a *separate* Habery (`--base plugins/keriguard-user`) and
+        is never in vault.hby.habs — daemon-provisioned machines' interface
+        credentials are issued to server_aid, not to a vault.hby hab (see
+        keriguard_admin's connections/connect.py, which reads `machine.server_aid`
+        as the credential recipient).
+        """
+        local_aids = set(self.app.vault.hby.habs.keys())
+        settings = self.app.vault.plugin_state.get("keriguard_user", {}).get("settings")
+        server_aid = getattr(settings, "server_aid", "")
+        if server_aid:
+            local_aids.add(server_aid)
+        return local_aids
+
     def _get_peer_name(self, interface_said: str) -> str:
         if not interface_said or not self.app or not self.app.vault:
             return interface_said
@@ -98,7 +115,7 @@ class ConnectionsListPage(QWidget):
             rgy = self.app.vault.rgy
             conn_creder, *_ = rgy.reger.cloneCred(said=conn_said)
             edge_block = conn_creder.sad.get("e", {})
-            user_aids = set(self.app.vault.hby.habs.keys())
+            user_aids = self._local_aids()
 
             for peer_key in ("peer1", "peer2"):
                 peer = edge_block.get(peer_key, {})
@@ -130,7 +147,7 @@ class ConnectionsListPage(QWidget):
 
         vault = self.app.vault
         rgy = vault.rgy
-        user_aids = set(vault.hby.habs.keys())
+        user_aids = self._local_aids()
 
         # Collect interface SAIDs that belong to this vault
         local_iface_saids: set[str] = set()

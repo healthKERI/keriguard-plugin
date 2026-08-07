@@ -549,6 +549,7 @@ class ViewKERIGuardDeviceDialog(LocksmithDialog):
                 "listenPort": 51820,
                 "address": [f"{self.address.strip()}/24"],
             }
+            logger.info(f"Building interface_config with address={self.address!r}")
 
             interface_metadata = {
                 "interfaceName": "wg0",
@@ -593,7 +594,7 @@ class ViewKERIGuardDeviceDialog(LocksmithDialog):
 
             publish_mode = settings.publish_mode if settings else "registrar"  # type: ignore
 
-            if publish_mode == "serviceprovider" and essr:
+            if publish_mode == "healthKERI" and essr:
                 await remoting.send_key_state_update(self.app, hab.pre)
                 await push_credential_via_essr(grant_bytes, essr, creder, introduction_bytes)
                 account = self.app.vault.plugin_state.get("keriguard", {}).get("account")
@@ -606,7 +607,7 @@ class ViewKERIGuardDeviceDialog(LocksmithDialog):
                     await push_introduction_to_registrar(introduction_bytes, settings.registrar_url)
 
 
-                # Refresh the view to show updated data
+            # Refresh the view to show updated data
             self.ip_assigned.emit()
 
             self.show_success(

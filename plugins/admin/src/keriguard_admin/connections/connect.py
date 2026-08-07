@@ -684,7 +684,7 @@ class IssueConnectionCredentialDialog(LocksmithDialog):
             publish_mode = settings.publish_mode if settings else "registrar"
 
             if publish_mode == "healthKERI" and essr:
-                await push_credential_via_essr(grant_bytes, essr, creder.said)
+                await push_credential_via_essr(grant_bytes, essr, creder)
                 account = self.app.vault.plugin_state.get("keriguard", {}).get("account")
                 team = self.app.vault.plugin_state.get("keriguard", {}).get("team")
                 if account and team:

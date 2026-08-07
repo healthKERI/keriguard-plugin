@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  smoke-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install plugins
+        run: |
+          python -m venv /tmp/venv
+          source /tmp/venv/bin/activate
+          pip install --upgrade pip
+          pip install -e plugins/user
+          # keriguard-admin depends on locksmith==0.0.1, which is not the
+          # PyPI package of that name (an unrelated project). Install the
+          # real locksmith from source first so the requirement resolves
+          # against it instead of failing / pulling the wrong package.
+          pip install "locksmith @ git+https://github.com/healthKERI/locksmith.git"
+          pip install -e plugins/admin
+
+      - name: Import smoke test
+        run: |
+          source /tmp/venv/bin/activate
+          python -c "import keriguard_user"
+          python -c "import keriguard_admin"
