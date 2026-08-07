@@ -36,7 +36,7 @@ from keri import help
 from keri.app import connecting, habbing
 from keri.core import parsing
 
-from keriguard.core.initializing import load_schema
+from keriguard.core.initializing import load_oobi, load_schema
 from keriguard.core.wireguarding import SCHEMA_OOBIS, Schema
 
 from . import keystore
@@ -166,6 +166,25 @@ def bootstrap_server_identity(
                 witness=witness,
             )
         ) or {}
+
+        # `connect_to_healthkeri` only resolves `witness_oobi` into
+        # `server_hby` -- but it's `sentinel_hby` the running sentinel
+        # daemon actually queries (`hby.db.locs`, via
+        # `add_watched_identifier`, sentinel/core/watching.py:404-417) when
+        # self-registering the guardian AID as a watched identifier at
+        # startup. Without this, that registration fails forever with
+        # "unable to query witness ..., no http endpoint" -- the loc/scheme
+        # for the witness was never loaded into the Habery that matters.
+        witness_oobi = connect_result.get("witness_oobi")
+        if witness and witness_oobi:
+            try:
+                load_oobi(
+                    sentinel_hby, witness_oobi, connect_result.get("witness_name") or "witness"
+                )
+            except Exception:
+                logger.exception(
+                    "bootstrap_server_identity: failed to load witness OOBI into sentinel_hby"
+                )
 
         # ... and the reverse: without this, the sentinel identity's local db
         # has no record that the guardian identity exists, so any reply the

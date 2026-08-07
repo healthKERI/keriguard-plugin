@@ -46,13 +46,12 @@ class KERIGuardUserSettings:
     sentinel_alias: str = ""
     sentinel_aid: str = ""
     # True only for the vault whose Setup actually bootstrapped the (machine-
-    # singleton) guardian launchd agent -- see DAEMONS.md "multiple vaults"
-    # guard in plugin.py._launch_daemons. Only that vault's in-process
-    # WireGuardApplier suppresses its own apply step (while the daemon is
-    # confirmed alive) to avoid two processes writing the same WireGuard
-    # .conf files / driving the same KERIGuardHelper IPC socket. Every other
-    # vault -- including all vaults on an unfrozen/dev run, where no daemon
-    # is ever launched -- keeps applying in-process unconditionally.
+    # singleton) guardian daemon -- see DAEMONS.md "multiple vaults" guard in
+    # plugin.py._launch_daemons. Informational only: credential apply is
+    # exclusively the guardian daemon's job (there is no in-process apply
+    # path anymore), so this field no longer gates any local behavior -- it
+    # just records which vault's identity actually holds the machine-wide
+    # daemon slot, for health-check/UI purposes.
     owns_daemon: bool = False
 
 

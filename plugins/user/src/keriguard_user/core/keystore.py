@@ -44,6 +44,34 @@ LAUNCH_AGENTS_DIR = Path.home() / "Library" / "LaunchAgents"
 GUARDIAN_AGENT_LABEL = "com.healthkeri.keriguard.guardian"
 SENTINEL_AGENT_LABEL = "com.healthkeri.keriguard.sentinel"
 
+
+# Dev-mode (KERIGUARD_DEV_DAEMONS=1) per-vault namespacing -- see
+# daemon_launch.py module docs. Prod's launchd labels/config/heartbeat paths
+# above are deliberate machine-wide singletons (DAEMONS.md Phase 3e: one
+# guardian+sentinel pair per Mac); dev-mode subprocesses have no such
+# constraint and need to support several vaults' daemon pairs coexisting
+# (e.g. testing a connection credential between two peer vaults), so each
+# dev identifier is suffixed with the vault's own `server_name`
+# (`f"{vault.hby.name}-server"`, already unique per vault -- see
+# provisioning.py/setup/page.py) instead of being a fixed constant. Without
+# this, a second vault's dev daemon launch reaps ("stale-PID reap",
+# daemon_launch.py's spawn_dev_daemon) the *first* vault's still-running
+# dev daemon under the same fixed label/PID-file/config path.
+def dev_guardian_agent_label(server_name: str) -> str:
+    return f"{GUARDIAN_AGENT_LABEL}.dev.{server_name}"
+
+
+def dev_sentinel_agent_label(server_name: str) -> str:
+    return f"{SENTINEL_AGENT_LABEL}.dev.{server_name}"
+
+
+def dev_sentinel_config_path(server_name: str) -> Path:
+    return SENTINEL_DIR / f"config.{server_name}.yaml"
+
+
+def dev_guardian_heartbeat_path(server_name: str) -> Path:
+    return APP_SUPPORT_DIR / f"guardian.dev.{server_name}.heartbeat"
+
 # Shared with the in-process Watcher (plugin.py) -- the daemon and the vault
 # process must agree on where exported CESR files land.
 DEFAULT_EXPORT_DIR = Path.home() / ".keri" / "keriguard-kel"

@@ -6,12 +6,17 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QLabel, QHBoxLayout, QFileDialog, QWidget, QVBoxLayout
 
 from locksmith.ui import colors
 from locksmith.ui.toolkit.widgets.page import LocksmithFormPage
 from locksmith.ui.toolkit.widgets.fields import FloatingLabelComboBox, FloatingLabelLineEdit
-from locksmith.ui.toolkit.widgets.buttons import LocksmithIconButton
+from locksmith.ui.toolkit.widgets.buttons import (
+    LocksmithButton,
+    LocksmithIconButton,
+    LocksmithInvertedButton,
+)
 
 from .db.basing import KERIGuardUserSettings
 
@@ -41,6 +46,7 @@ class KERIGuardUserSettingsPage(LocksmithFormPage):
         self._build_export_dir_section()
         self._build_poll_interval_section()
         self._build_kel_watch_interval_section()
+        self._build_daemon_section()
         self.content_layout.addStretch()
 
     def _build_source_section(self):
@@ -217,6 +223,48 @@ class KERIGuardUserSettingsPage(LocksmithFormPage):
         self._kel_watch_interval_field.line_edit.editingFinished.connect(self._on_kel_watch_interval_changed)
         self.content_layout.addWidget(self._kel_watch_interval_field)
 
+    def _build_daemon_section(self):
+        self.content_layout.addSpacing(24)
+
+        header = QLabel("Background Daemons")
+        header.setStyleSheet("font-weight: 600; font-size: 16px;")
+        self.content_layout.addWidget(header)
+        self.content_layout.addSpacing(8)
+
+        hint = QLabel(
+            "The guardian and sentinel daemons apply credentials to the WireGuard "
+            "configuration in the background, independent of this vault. They start "
+            "automatically and keep running after the vault is closed -- use these "
+            "controls to stop them or bring them back up manually."
+        )
+        hint.setStyleSheet(f"color: {colors.TEXT_SUBTLE}; font-size: 13px;")
+        hint.setWordWrap(True)
+        self.content_layout.addWidget(hint)
+        self.content_layout.addSpacing(10)
+
+        status_row = QHBoxLayout()
+        status_row.setSpacing(8)
+        status_caption = QLabel("Status:")
+        status_caption.setStyleSheet("font-size: 13px;")
+        status_row.addWidget(status_caption)
+        self._daemon_status_label = QLabel("")
+        self._daemon_status_label.setStyleSheet(f"color: {colors.TEXT_SUBTLE}; font-size: 13px;")
+        status_row.addWidget(self._daemon_status_label)
+        status_row.addStretch()
+        self.content_layout.addLayout(status_row)
+        self.content_layout.addSpacing(10)
+
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(8)
+        self._daemon_start_btn = LocksmithButton("Start Daemons")
+        self._daemon_start_btn.clicked.connect(self._on_start_daemons_clicked)
+        btn_row.addWidget(self._daemon_start_btn)
+        self._daemon_stop_btn = LocksmithInvertedButton("Stop Daemons")
+        self._daemon_stop_btn.clicked.connect(self._on_stop_daemons_clicked)
+        btn_row.addWidget(self._daemon_stop_btn)
+        btn_row.addStretch()
+        self.content_layout.addLayout(btn_row)
+
     def _make_subsection(self):
         w = QWidget()
         layout = QVBoxLayout(w)
@@ -236,6 +284,11 @@ class KERIGuardUserSettingsPage(LocksmithFormPage):
     def _get_settings(self) -> KERIGuardUserSettings | None:
         db = self._get_db()
         return db.keriguardUserSettings.get(keys=("settings",)) if db else None
+
+    def _get_plugin(self):
+        if not self.app or not hasattr(self.app, "plugin_manager"):
+            return None
+        return self.app.plugin_manager.get_plugin("keriguard_user")
 
     def _save_settings(self, **kwargs) -> None:
         db = self._get_db()
@@ -358,8 +411,55 @@ class KERIGuardUserSettingsPage(LocksmithFormPage):
         self._kel_watch_interval_field.setText(str(interval))
         self._save_settings(kel_watch_interval=interval)
 
+    # ------------------------------------------------------------------
+    # Daemon controls
+    # ------------------------------------------------------------------
+
+    def _refresh_daemon_status(self) -> None:
+        plugin = self._get_plugin()
+        if plugin is None:
+            self._daemon_status_label.setText("Unavailable")
+            self._daemon_start_btn.setEnabled(False)
+            self._daemon_stop_btn.setEnabled(False)
+            return
+
+        status = plugin.daemons_status()
+        if not status["supported"]:
+            self._daemon_status_label.setText(
+                "Not supported in this build/run "
+                "(needs a frozen macOS build, or dev with KERIGUARD_DEV_DAEMONS=1)"
+            )
+            self._daemon_start_btn.setEnabled(False)
+            self._daemon_stop_btn.setEnabled(False)
+            return
+
+        guardian_up = status["guardian_running"]
+        sentinel_up = status["sentinel_running"]
+        if guardian_up and sentinel_up:
+            self._daemon_status_label.setText("Running")
+        elif guardian_up or sentinel_up:
+            self._daemon_status_label.setText("Partially running")
+        else:
+            self._daemon_status_label.setText("Stopped")
+
+        self._daemon_start_btn.setEnabled(True)
+        self._daemon_stop_btn.setEnabled(guardian_up or sentinel_up)
+
+    def _on_start_daemons_clicked(self) -> None:
+        plugin = self._get_plugin()
+        if plugin is not None:
+            plugin.start_daemons()
+        QTimer.singleShot(500, self._refresh_daemon_status)
+
+    def _on_stop_daemons_clicked(self) -> None:
+        plugin = self._get_plugin()
+        if plugin is not None:
+            plugin.stop_daemons()
+        QTimer.singleShot(500, self._refresh_daemon_status)
+
     def on_show(self) -> None:
         self._load_settings()
+        self._refresh_daemon_status()
 
     def set_vault_name(self, vault_name: str):
         self.vault_name = vault_name
