@@ -23,8 +23,8 @@ classifiers = [
 ]
 
 dependencies = [
-    "keriguard @git+https://git@github.com/arilieb/keriguard.git@feat-daemon-support",
-    "sentinel @git+https://git@github.com/arilieb/sentinel.git@feat-daemon-support"
+    "keriguard @git+https://git@github.com/healthKERI/keriguard",
+    "sentinel @git+https://git@github.com/healthKERI/sentinel"
 ]
 
 [project.entry-points."locksmith.plugins"]
