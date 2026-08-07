@@ -9,6 +9,10 @@
 <dict>
     <key>Label</key>
     <string>com.healthkeri.keriguard.guardian</string>
+    <key>AssociatedBundleIdentifiers</key>
+    <array>
+        <string>com.healthkeri.locksmith</string>
+    </array>
     <key>ProgramArguments</key>
     <array>
         <string>{KG_EXECUTABLE}</string>

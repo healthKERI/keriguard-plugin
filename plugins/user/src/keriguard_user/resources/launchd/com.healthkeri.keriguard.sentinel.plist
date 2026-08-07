@@ -10,6 +10,10 @@
 <dict>
     <key>Label</key>
     <string>com.healthkeri.keriguard.sentinel</string>
+    <key>AssociatedBundleIdentifiers</key>
+    <array>
+        <string>com.healthkeri.locksmith</string>
+    </array>
     <key>ProgramArguments</key>
     <array>
         <string>{SENTINEL_EXECUTABLE}</string>
