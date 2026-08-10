@@ -159,7 +159,7 @@ class MachinesListPage(QWidget):
         if creder:
             interface = creder.attrib.get("interface", {})
             address = interface.get("address", "")
-            addy = address[0].rstrip("/24")
+            addy = address[0].rsplit("/24", 1)[0]
             machine["address"] = addy
         else:
             machine["address"] = ""
