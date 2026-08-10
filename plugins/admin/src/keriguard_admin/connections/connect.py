@@ -436,7 +436,7 @@ class IssueConnectionCredentialDialog(LocksmithDialog):
     def _peer1_machine_selected(self, value):
         self._selected_peer1_machine = value
         self.peer1_name = value.get('name', '')
-        self._peer1_allowed_ips.setText(f"{value.get('ipaddress', '').rstrip('/24')}/32")
+        self._peer1_allowed_ips.setText(f"{value.get('ipaddress', '').rsplit("/24", 1)[0]}/32")
         self._peer1_listen_port.setText(f":{str(value.get('listen_port', 51820))}")
         self._conn_name.setText(f"{self.peer1_name}_{self.peer2_name}")
         self._peer1_endpoint.setFocus()
@@ -444,7 +444,7 @@ class IssueConnectionCredentialDialog(LocksmithDialog):
     def _peer2_machine_selected(self, value):
         self._selected_peer2_machine = value
         self.peer2_name = value.get('name', '')
-        self._peer2_allowed_ips.setText(f"{value.get('ipaddress', '').rstrip('/24')}/32")
+        self._peer2_allowed_ips.setText(f"{value.get('ipaddress', '').rsplit("/24", 1)[0]}/32")
         self._peer2_endpoint.setFocus()
         self._peer2_listen_port.setText(f":{str(value.get('listen_port', 51820))}")
         self._conn_name.setText(f"{self.peer1_name}_{self.peer2_name}")
@@ -683,8 +683,8 @@ class IssueConnectionCredentialDialog(LocksmithDialog):
 
             publish_mode = settings.publish_mode if settings else "registrar"
 
-            if publish_mode == "healthKERI" and essr:
-                await push_credential_via_essr(grant_bytes, essr, creder.said)
+            if publish_mode == "serviceprovider" and essr:
+                await push_credential_via_essr(grant_bytes, essr, creder)
                 account = self.app.vault.plugin_state.get("keriguard", {}).get("account")
                 team = self.app.vault.plugin_state.get("keriguard", {}).get("team")
                 if account and team:
