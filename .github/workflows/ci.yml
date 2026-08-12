@@ -16,11 +16,22 @@ jobs:
         with:
           python-version: '3.13'
 
+      - name: Verify locksmith access
+        env:
+          LOCKSMITH_TOKEN: ${{ secrets.LOCKSMITH_TOKEN }}
+        run: |
+          curl -sS -o /dev/null -w "%{http_code}\n" \
+            -H "Authorization: Bearer ${LOCKSMITH_TOKEN}" \
+            https://api.github.com/repos/healthKERI/locksmith
+
       - name: Install plugins
         env:
           LOCKSMITH_TOKEN: ${{ secrets.LOCKSMITH_TOKEN }}
         run: |
           git config --global url."https://x-access-token:${LOCKSMITH_TOKEN}@github.com/".insteadOf "https://github.com/"
+          git config --global url."https://x-access-token:${LOCKSMITH_TOKEN}@github.com/".insteadOf "git@github.com:"
+          git config --global credential.helper store
+          printf 'https://x-access-token:%s@github.com\n' "${LOCKSMITH_TOKEN}" > ~/.git-credentials
           python -m venv /tmp/venv
           source /tmp/venv/bin/activate
           pip install --upgrade pip
