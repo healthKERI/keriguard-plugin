@@ -549,6 +549,7 @@ class ViewKERIGuardDeviceDialog(LocksmithDialog):
                 "listenPort": 51820,
                 "address": [f"{self.address.strip()}/24"],
             }
+            logger.info(f"Building interface_config with address={self.address!r}")
 
             interface_metadata = {
                 "interfaceName": "wg0",
@@ -606,7 +607,7 @@ class ViewKERIGuardDeviceDialog(LocksmithDialog):
                     await push_introduction_to_registrar(introduction_bytes, settings.registrar_url)
 
 
-                # Refresh the view to show updated data
+            # Refresh the view to show updated data
             self.ip_assigned.emit()
 
             self.show_success(

@@ -79,7 +79,7 @@ class MachinesListPage(QWidget):
     def _transform_machine_to_row(self, machine: dict[str, Any]) -> dict[str, Any]:
         said = machine.get("said", "")
         self._machines_cache[said] = machine
-        return {
+        row = {
             "Name": machine.get("name", ""),
             "AID": machine.get("aid", ""),
             "Address": machine.get("address", ""),
@@ -87,6 +87,12 @@ class MachinesListPage(QWidget):
             "Status": machine.get("wg_status", "Unknown"),
             "_said": said,
         }
+        if machine.get("is_self"):
+            row["Name_icon"] = ":/assets/material-icons/person_check.svg"
+            row["Name_icon_side"] = "after"
+            row["Name_icon_color"] = colors.SUCCESS
+            row["Name_tooltip"] = "This machine belongs to your server AID"
+        return row
 
     def _load_rows(self) -> list[dict[str, Any]]:
         if not self.app or not self.app.vault:
@@ -97,22 +103,29 @@ class MachinesListPage(QWidget):
         user_aids = set(vault.hby.habs.keys())
         rows: list[dict[str, Any]] = []
 
+        settings = self.app.vault.plugin_state.get("keriguard_user", {}).get("settings")
+        server_aid = getattr(settings, "server_aid", "")
+
         try:
             for saider in (rgy.reger.schms.get(keys=Schema.INTERFACE_SCHEMA) or []):
                 try:
                     creder, *_ = rgy.reger.cloneCred(said=saider.qb64)
                     payload = creder.attrib
+
+                    issuee = payload.get("i", "")
+
                     iface = payload.get("interface", {})
                     meta = payload.get("interfaceMetadata", {})
                     iface_name = meta.get("interfaceName", "")
                     rows.append(self._transform_machine_to_row({
                         "said": creder.said,
                         "name": iface_name,
-                        "aid": payload.get("i", ""),
+                        "aid": issuee,
                         "address": ", ".join(iface.get("address", [])),
                         "port": str(iface.get("listenPort", "")),
                         "wg_status": _wg_status(iface_name),
                         "environment": meta.get("environment", ""),
+                        "is_self": bool(server_aid) and issuee == server_aid,
                     }))
                 except Exception as exc:
                     logger.warning(f"Skipping credential {saider.qb64}: {exc}")

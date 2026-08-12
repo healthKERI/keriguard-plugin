@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Template for the KERIGuard guardian (WireGuard peer) launchd agent.
+  See keriguard_user.core.guardian_launch for the placeholder token list
+  and the rendering contract (whole-token substitution only).
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.healthkeri.keriguard.guardian</string>
+    <key>AssociatedBundleIdentifiers</key>
+    <array>
+        <string>com.healthkeri.locksmith</string>
+    </array>
+    <key>ProgramArguments</key>
+    <array>
+        <string>{KG_EXECUTABLE}</string>
+        <string>guardian</string>
+        <string>start</string>
+        <string>--base</string>
+        <string>{BASE}</string>
+        <string>--name</string>
+        <string>{GUARDIAN_NAME}</string>
+        <string>--alias</string>
+        <string>{GUARDIAN_ALIAS}</string>
+        <string>--sentinel-aid</string>
+        <string>{SENTINEL_AID}</string>
+        <string>--sentinel-export-dir</string>
+        <string>{SENTINEL_EXPORT_DIR}</string>
+        <string>--config-dir</string>
+        <string>{CONFIG_DIR}</string>
+        <string>--socket-dir</string>
+        <string>{SOCKET_DIR}</string>
+        <string>--passcode-file</string>
+        <string>{PASSCODE_FILE}</string>
+        <string>--heartbeat-file</string>
+        <string>{HEARTBEAT_FILE}</string>
+        <string>--loglevel</string>
+        <string>INFO</string>
+    </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>ARCHIMEDES_ENVIRONMENT</key>
+        <string>{ARCHIMEDES_ENVIRONMENT}</string>
+        <key>LOCKSMITH_ENVIRONMENT</key>
+        <string>{LOCKSMITH_ENVIRONMENT}</string>
+    </dict>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+    <key>ProcessType</key>
+    <string>Background</string>
+    <key>StandardOutPath</key>
+    <string>{STDOUT_LOG}</string>
+    <key>StandardErrorPath</key>
+    <string>{STDERR_LOG}</string>
+</dict>
+</plist>

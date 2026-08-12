@@ -213,23 +213,10 @@ class ImportConnectionCredentialPage(LocksmithFormPage):
             self.import_complete.emit()
             return
 
-        applier = vault.plugin_state.get("keriguard_user", {}).get("applier")
-        results = []
-        for said in new_saids:
-            if applier:
-                result = await applier.apply(said)
-                results.append((said, result))
-            else:
-                results.append((said, "no_applier"))
-
-        pending_ne_approval = any(r == "pending_ne_approval" for _, r in results)
-        if pending_ne_approval:
-            self._show_status(
-                "Credential imported. WireGuard peer is pending — approve KERIGuard "
-                "Helper's network extension in System Settings."
-            )
-        else:
-            self._show_status(f"Successfully imported {len(new_saids)} credential(s).")
+        self._show_status(
+            f"Successfully imported {len(new_saids)} credential(s). "
+            f"Your KERIGuard guardian daemon will apply the WireGuard configuration."
+        )
 
         self.import_complete.emit()
 

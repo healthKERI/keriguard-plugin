@@ -67,7 +67,9 @@ class SetupPage(LocksmithFormPage):
         self._add_section_header(
             layout,
             header="Import Config File",
-            sub="Load a keriguard.conf YAML file to pre-fill the fields below.",
+            sub="Load the keriguard.conf YAML file your administrator generated "
+                "when adding this machine. Required — it contains the server "
+                "identity's auth key.",
         )
         layout.addSpacing(10)
         self._build_config_file_row(layout)
@@ -81,7 +83,7 @@ class SetupPage(LocksmithFormPage):
         layout.addSpacing(10)
         self._credential_source_combo = FloatingLabelComboBox("Credential Source")
         self._credential_source_combo.setFixedWidth(420)
-        for mode in ["registrar", "healthKERI"]:
+        for mode in ["registrar", "serviceprovider"]:
             self._credential_source_combo.addItem(mode)
         self._credential_source_combo.currentTextChanged.connect(self._on_source_changed)
         layout.addWidget(self._credential_source_combo)
@@ -100,6 +102,16 @@ class SetupPage(LocksmithFormPage):
         self._issuer_oobi_field = FloatingLabelLineEdit("Issuer OOBI")
         self._issuer_oobi_field.setFixedWidth(420)
         layout.addWidget(self._issuer_oobi_field)
+        layout.addSpacing(32)
+
+        self._add_section_header(
+            layout,
+            header="Server Identity",
+            sub="A dedicated machine identity will be provisioned using the server "
+                "auth key from your imported config file. This identity (not your "
+                "vault's own AID) is what future KERIGuard daemons act as, and keeps "
+                "working even while this vault is locked.",
+        )
         layout.addSpacing(32)
 
         self._registrar_section = QWidget()
@@ -206,6 +218,8 @@ class SetupPage(LocksmithFormPage):
         self._summary_issuer = self._make_summary_row(inner, "Issuer AID")
         self._summary_source = self._make_summary_row(inner, "Credential Source")
         self._summary_config_dir = self._make_summary_row(inner, "Config Directory")
+        self._summary_server_aid = self._make_summary_row(inner, "Server AID")
+        self._summary_server_aid.setText("(pending Initialization)")
         return frame
 
     def _make_summary_row(self, layout, label: str) -> QLabel:
@@ -307,8 +321,8 @@ class SetupPage(LocksmithFormPage):
 
     def _load_config_file(self, path: str):
         try:
-            from keriguard.core.initializing import KeriguardConfig
-            self._config = KeriguardConfig.load(path)
+            from keriguard.core.initializing import InitializationConfig
+            self._config = InitializationConfig.load(path)
         except Exception as exc:
             logger.warning(f"SetupPage: could not load config file {path!r}: {exc}")
             self._config = None
@@ -320,7 +334,7 @@ class SetupPage(LocksmithFormPage):
         self._issuer_oobi_field.setText(issuer_oobi)
 
         if not self._config.local:
-            idx = self._credential_source_combo.findText("healthKERI")
+            idx = self._credential_source_combo.findText("serviceprovider")
             self._credential_source_combo.setCurrentIndex(idx if idx >= 0 else 0)
         else:
             idx = self._credential_source_combo.findText("registrar")
@@ -363,7 +377,10 @@ class SetupPage(LocksmithFormPage):
         self._summary_title_lbl.setStyleSheet(
             f"font-weight: 700; font-size: 14px; color: {colors.SUCCESS};"
         )
-        for lbl in (self._summary_issuer, self._summary_source, self._summary_config_dir):
+        for lbl in (
+            self._summary_issuer, self._summary_source, self._summary_config_dir,
+            self._summary_server_aid,
+        ):
             lbl.setStyleSheet(f"font-size: 13px; color: {colors.SUCCESS};")
 
     def _show_summary_default(self):
@@ -374,8 +391,12 @@ class SetupPage(LocksmithFormPage):
         )
         self._summary_title_lbl.setText("Summary")
         self._summary_title_lbl.setStyleSheet("font-weight: 700; font-size: 14px;")
-        for lbl in (self._summary_issuer, self._summary_source, self._summary_config_dir):
+        for lbl in (
+            self._summary_issuer, self._summary_source, self._summary_config_dir,
+            self._summary_server_aid,
+        ):
             lbl.setStyleSheet("font-size: 13px;")
+        self._summary_server_aid.setText("(pending Initialization)")
 
     @qasync.asyncSlot()
     async def _on_initialize(self):
@@ -409,6 +430,20 @@ class SetupPage(LocksmithFormPage):
 
         if not issuer_aid or not issuer_oobi or not config_dir:
             logger.warning("SetupPage: missing required fields")
+            return
+
+        if (
+            self._config is None
+            or self._config.server is None
+            or not self._config.server.auth_key
+        ):
+            self.show_error(
+                "Load a KERIGuard config file with a server auth key before "
+                "initializing — ask your administrator to generate one from "
+                "Add Machine."
+            )
+            self._init_button.setText("Initialize")
+            self._init_button.setEnabled(True)
             return
 
         config_dir_path = Path(config_dir)
@@ -460,7 +495,26 @@ class SetupPage(LocksmithFormPage):
                 toad=0,
             )
 
-        # 5. Save settings
+        # 5. Provision the dedicated headless machine identity (PLAN.md Phase 1).
+        server_identity = await self._provision_server_identity(vault, loop, issuer_oobi)
+        if not server_identity.get("success"):
+            self._init_button.setText("Initialize")
+            self._init_button.setEnabled(True)
+            return
+        self._summary_server_aid.setText(
+            server_identity["server_aid"][:20] + "…"
+        )
+
+        # 5b. Resolve the guardian's witness-mediated OOBI into the vault's
+        # own hby -- mirroring the issuer OOBI resolution above -- so the
+        # vault gets the guardian AID's KEL into its own kevers (a
+        # precondition for the in-process Watcher to watch it) and can
+        # independently track it as its "interface" identity.
+        guardian_oobi = server_identity.get("guardian_oobi", "")
+        if guardian_oobi:
+            await loop.run_in_executor(None, load_oobi, vault.hby, guardian_oobi, "guardian")
+
+        # 6. Save settings
         from keriguard_user.db.basing import KERIGuardUserSettings
         kg_user_db = vault.plugin_state.get("keriguard_user", {}).get("db")
         if kg_user_db is None:
@@ -477,11 +531,19 @@ class SetupPage(LocksmithFormPage):
             export_dir="",
             poll_interval=30,
             is_initialized=True,
+            server_name=server_identity["server_name"],
+            server_alias=server_identity["server_alias"],
+            server_base=server_identity["server_base"],
+            server_aid=server_identity["server_aid"],
+            server_oobi=guardian_oobi,
+            sentinel_name=server_identity["sentinel_name"],
+            sentinel_alias=server_identity["sentinel_alias"],
+            sentinel_aid=server_identity["sentinel_aid"],
         )
         kg_user_db.keriguardUserSettings.pin(keys=("settings",), val=settings)
         vault.plugin_state["keriguard_user"]["settings"] = settings
 
-        # 6. Show success and schedule auto-navigation after 1 second
+        # 7. Show success and schedule auto-navigation after 1 second
         self._init_button.hide()
         self._show_summary_complete()
         self.show_success(
@@ -495,6 +557,74 @@ class SetupPage(LocksmithFormPage):
         self._nav_timer.timeout.connect(self.setup_complete.emit)
         self._nav_timer.start(1000)
         logger.info("SetupPage: KERIGuard user plugin initialized")
+
+    async def _provision_server_identity(self, vault, loop, issuer_oobi: str) -> dict:
+        """Provision the dedicated headless machine identity
+
+        Uses the admin-issued auth code carried in the imported config file
+        (self._config.server.auth_key) to register a new, non-delegated AID
+        with healthKERI's team-server flow. The user does not need their own
+        healthKERI account — the auth-code handoff is what lets this vault
+        join the network. The code is used once, in-memory, and discarded --
+        it is never persisted, logged, or written to the settings DB.
+
+        Returns {"success": True, "server_name", "server_alias",
+        "server_base", "server_aid", "sentinel_name", "sentinel_alias",
+        "sentinel_aid"} or {"success": False}, having already surfaced an
+        actionable error via show_error() on failure.
+        """
+        if (
+                self._config is None
+                or self._config.server is None
+                or not self._config.server.auth_key
+        ):
+            self.show_error(
+                "Load a KERIGuard config file with a server auth key before "
+                "initializing — ask your administrator to generate one from "
+                "Add Machine."
+            )
+            return {"success": False}
+
+        from keriguard_user.core import keystore
+        from keriguard_user.core.provisioning import bootstrap_server_identity
+
+        server_name = f"{vault.hby.name}-server"
+        server_alias = server_name
+
+        auth_code = self._config.server.auth_key
+        bran = keystore.load_or_create_bran()
+
+        try:
+            result = await loop.run_in_executor(
+                None,
+                bootstrap_server_identity,
+                bran, server_name, server_alias, auth_code, issuer_oobi,
+                True,  # witness — DAEMONS.md Decisions: guardian AID is witnessed
+            )
+        finally:
+            auth_code = None  # noqa: F841 -- drop the plaintext code reference
+
+        if not result.get("success"):
+            self.show_error(
+                f"Server identity provisioning failed: {result.get('error')}"
+            )
+            return {"success": False}
+
+        logger.info(
+            f"SetupPage: provisioned server identity {result['server_aid'][:16]}… "
+            f"(sentinel {result['sentinel_aid'][:16]}…)"
+        )
+        return {
+            "success": True,
+            "server_name": server_name,
+            "server_alias": server_alias,
+            "server_base": keystore.SERVER_BASE,
+            "server_aid": result["server_aid"],
+            "sentinel_name": result["sentinel_name"],
+            "sentinel_alias": result["sentinel_alias"],
+            "sentinel_aid": result["sentinel_aid"],
+            "guardian_oobi": result.get("guardian_oobi", ""),
+        }
 
     async def _load_schemas(self, vault, loop):
         """Load KERIGuard schemas into the vault db.

@@ -30,7 +30,7 @@ class CredentialPoller:
     def __init__(self, hby, hab, rgy, settings: "KERIGuardUserSettings", essr=None):
         self.rgy = rgy
         self.issuer_aid = settings.issuer_aid
-        self._saas = settings.credential_source == "healthKERI"
+        self._saas = settings.credential_source == "serviceprovider"
         # Store constructor args so set_essr() can rebuild the loader later.
         self._hby = hby
         self._hab = hab

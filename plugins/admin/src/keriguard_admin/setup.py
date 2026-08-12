@@ -48,7 +48,7 @@ class KERIGuardAdminSetupPage(LocksmithFormPage):
 
     SUBTITLES = {
         "opensource": "Open source — connect a public or self-hosted repository.",
-        "serviceprovider": "Service provider — connect to a vendor-managed integration.",
+        "healthKERI": "Service provider — connect to a vendor-managed integration.",
     }
 
     def __init__(self, app: "LocksmithApplication", parent: "VaultPage | None" = None):
@@ -91,7 +91,7 @@ class KERIGuardAdminSetupPage(LocksmithFormPage):
 
         self.toggle = SegmentedToggle([
             ("serviceprovider", "Service Provider", ":/assets/material-icons/trip.svg", ":/assets/material-icons/dark-trip.svg"),
-            ("opensource", "Open Source", ":/assets/material-icons/open-source.svg", ":/assets/material-icons/dark-open-source.svg"),
+            ("registrar", "Open Source", ":/assets/material-icons/open-source.svg", ":/assets/material-icons/dark-open-source.svg"),
         ])
         self.toggle.setFixedWidth(525)
         self.toggle.valueChanged.connect(self._on_toggle_changed)
