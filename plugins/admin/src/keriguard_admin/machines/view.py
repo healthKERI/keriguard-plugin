@@ -540,6 +540,10 @@ class ViewKERIGuardDeviceDialog(LocksmithDialog):
 
             org = connecting.Organizer(hby=hby)
             contact = org.get(recipient_aid)
+            if not contact:
+                org.update(recipient_aid, {'alias': self.name})
+                contact = org.get(recipient_aid)
+
             recipient_alias = contact.get("alias", "") if contact else ""
             recipient_oobi = contact.get("oobi", "") if contact else ""
 
