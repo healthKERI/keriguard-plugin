@@ -28,10 +28,9 @@ jobs:
         env:
           LOCKSMITH_TOKEN: ${{ secrets.LOCKSMITH_TOKEN }}
         run: |
-          git config --global url."https://x-access-token:${LOCKSMITH_TOKEN}@github.com/".insteadOf "https://github.com/"
-          git config --global url."https://x-access-token:${LOCKSMITH_TOKEN}@github.com/".insteadOf "git@github.com:"
           git config --global credential.helper store
-          printf 'https://x-access-token:%s@github.com\n' "${LOCKSMITH_TOKEN}" > ~/.git-credentials
+          printf 'https://x-access-token:%s@github.com\n' "${LOCKSMITH_TOKEN}" > "${HOME}/.git-credentials"
+          chmod 600 "${HOME}/.git-credentials"
           python -m venv /tmp/venv
           source /tmp/venv/bin/activate
           pip install --upgrade pip
