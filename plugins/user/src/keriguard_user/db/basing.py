@@ -11,7 +11,7 @@ logger = help.ogler.getLogger(__name__)
 @dataclass
 class KERIGuardUserSettings:
     """Persisted settings for the KERIGuard user plugin."""
-    credential_source: str = "registrar"  # "registrar" | "healthKERI"
+    credential_source: str = "registrar"  # "registrar" | "serviceprovider"
     registrar_url: str = ""
     issuer_aid: str = ""
     issuer_oobi: str = ""

@@ -46,7 +46,7 @@ class KERIGuardTeam:
 class KERIGuardSettings:
     """Persisted settings for the KERIGuard plugin."""
 
-    publish_mode: str = "registrar"  # "registrar" | "healthKERI"
+    publish_mode: str = "registrar"  # "registrar" | "serviceprovider"
     issuer_aid: str = ""
     registry_name: str = ""
     registrar_url: str = ""

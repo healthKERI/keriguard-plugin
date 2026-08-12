@@ -66,7 +66,7 @@ class KERIGuardUserSettingsPage(LocksmithFormPage):
 
         self._source_dropdown = FloatingLabelComboBox("Credential Source")
         self._source_dropdown.setFixedWidth(420)
-        for mode in ["registrar", "healthKERI"]:
+        for mode in ["registrar", "serviceprovider"]:
             self._source_dropdown.addItem(mode)
         self._source_dropdown.currentTextChanged.connect(self._on_source_changed)
         self.content_layout.addWidget(self._source_dropdown)

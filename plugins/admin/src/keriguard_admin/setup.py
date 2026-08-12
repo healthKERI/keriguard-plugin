@@ -90,8 +90,8 @@ class KERIGuardAdminSetupPage(LocksmithFormPage):
         self.content_layout.addSpacing(20)
 
         self.toggle = SegmentedToggle([
-            ("healthKERI", "Service Provider", ":/assets/material-icons/trip.svg", ":/assets/material-icons/dark-trip.svg"),
-            ("opensource", "Open Source", ":/assets/material-icons/open-source.svg", ":/assets/material-icons/dark-open-source.svg"),
+            ("serviceprovider", "Service Provider", ":/assets/material-icons/trip.svg", ":/assets/material-icons/dark-trip.svg"),
+            ("registrar", "Open Source", ":/assets/material-icons/open-source.svg", ":/assets/material-icons/dark-open-source.svg"),
         ])
         self.toggle.setFixedWidth(525)
         self.toggle.valueChanged.connect(self._on_toggle_changed)
@@ -308,7 +308,7 @@ class KERIGuardAdminSetupPage(LocksmithFormPage):
 
         # Validate publish mode specific requirements
         mode = self.toggle.value()
-        if mode == "healthKERI":
+        if mode == "serviceprovider":
             if self._service_provider_dropdown.currentIndex() == -1:
                 errors.append("Please select a Service Provider.")
         elif mode == "opensource":

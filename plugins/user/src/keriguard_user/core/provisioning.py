@@ -30,14 +30,16 @@ keep working while the vault is closed/locked.
 from __future__ import annotations
 
 import asyncio
+import random
 from typing import Any
 
-from keri import help
+from keri import help, kering
 from keri.app import connecting, habbing
 from keri.core import parsing
 
 from keriguard.core.initializing import load_oobi, load_schema
 from keriguard.core.wireguarding import SCHEMA_OOBIS, Schema
+from keriguard.db.basing import KERIGuardBaser
 
 from . import keystore
 
@@ -77,6 +79,7 @@ def bootstrap_server_identity(
     name: str,
     alias: str,
     auth_code: str,
+    issuer_oobi: str,
     witness: bool = False,
 ) -> dict[str, Any]:
     """Create (or reopen) two dedicated, non-delegated Haberies/habs -- a
@@ -91,13 +94,20 @@ def bootstrap_server_identity(
     `load_oobi`). Never raises; failures come back as
     `{"success": False, "error": str}`.
 
-    On success the returned dict also carries `witness_aid`/`witness_name`/
-    `witness_oobi` for the guardian's witness (empty strings when
-    `witness=False`) -- callers resolve this OOBI into the *vault's own*
-    `hby` (mirroring the existing `issuer_aid`/`issuer_oobi` pattern) so the
-    vault can independently track the guardian AID as its "interface"
-    identity. `connect_to_healthkeri` already resolves this same OOBI into
-    `server_hby` internally; that's a separate Habery from the vault's own.
+    `issuer_oobi` is resolved into both Haberies before either identity is
+    registered with healthKERI -- required for the guardian's own Verifier
+    and, more acutely, for the sentinel daemon's watch of the issuer AID to
+    ever succeed at all (see the `add_watched_identifier` note inline).
+
+    On success the returned dict also carries `witness_aid` and
+    `guardian_oobi` -- the guardian's witness-mediated self-OOBI, built by
+    hand after `connect_to_healthkeri` returns (that call itself returns
+    nothing; see `kg guardian up`'s identical tail, up.py:251-280). Callers
+    resolve `guardian_oobi` into the *vault's own* `hby` (mirroring the
+    existing `issuer_aid`/`issuer_oobi` pattern) so the vault can
+    independently track the guardian AID as its "interface" identity. It has
+    already been resolved into `sentinel_hby` internally by this function --
+    that's a separate Habery from the vault's own.
 
     `auth_code` is used once, in-memory, to authenticate the registration
     request -- callers must not persist, log, or otherwise retain it.
@@ -153,9 +163,32 @@ def bootstrap_server_identity(
             pre=sentinel_hab.pre, data=dict(alias=sentinel_alias)
         )
 
+        # Resolve the issuer's OOBI into *both* Haberies up front, mirroring
+        # `kg guardian up`'s `load_oobi(hby=keriguard_hby, oobi=config.issuer.oobi,
+        # ...)` / `load_oobi(hby=sentinel_hby, oobi=config.issuer.oobi, ...)`
+        # step (up.py:187-188) -- done here, not deferred to the watch()
+        # call below, for two independent reasons: the guardian daemon's own
+        # Verifier needs the issuer's kever to verify incoming credentials,
+        # and -- the one that actually breaks SaaS watching --
+        # `add_watched_identifier` (sentinel/core/watching.py:225-273) never
+        # reads the `oobi` field off the watch() message at all; in SaaS
+        # mode (registrar_url=None, which is what `setup_hk` always passes)
+        # it purely checks `watched_aid in hby.kevers` and raises "not found
+        # in KERI database" otherwise. Without this, `register_issuer_watch`'s
+        # later `watch(issuer_aid, issuer_oobi)` call fails every time.
+        issuer_aid = load_oobi(hby=server_hby, oobi=issuer_oobi, alias="issuer")
+        load_oobi(hby=sentinel_hby, oobi=issuer_oobi, alias="issuer")
+
         from sentinel.framework.connecting import connect_to_healthkeri
 
-        connect_result = asyncio.run(
+        # `connect_to_healthkeri` returns nothing -- same as `kg guardian
+        # up` (up.py:241-249), which discards its result too. Everything
+        # needed afterward is derived from `server_hab`, which this call
+        # mutates in place (witness rotation when `witness=True`).
+        # `bootstrap_server_identity` is sync (called via
+        # `run_in_executor`), so this still needs `asyncio.run`, not a bare
+        # `await`.
+        asyncio.run(
             connect_to_healthkeri(
                 server_name=name,
                 sentinel_hby=sentinel_hby,
@@ -165,51 +198,44 @@ def bootstrap_server_identity(
                 server_hab=server_hab,
                 witness=witness,
             )
-        ) or {}
+        )
 
-        # `connect_to_healthkeri` only resolves `witness_oobi` into
-        # `server_hby` -- but it's `sentinel_hby` the running sentinel
-        # daemon actually queries (`hby.db.locs`, via
-        # `add_watched_identifier`, sentinel/core/watching.py:404-417) when
-        # self-registering the guardian AID as a watched identifier at
-        # startup. Without this, that registration fails forever with
-        # "unable to query witness ..., no http endpoint" -- the loc/scheme
-        # for the witness was never loaded into the Habery that matters.
-        witness_oobi = connect_result.get("witness_oobi")
-        if witness and witness_oobi:
-            try:
-                load_oobi(
-                    sentinel_hby, witness_oobi, connect_result.get("witness_name") or "witness"
-                )
-            except Exception:
-                logger.exception(
-                    "bootstrap_server_identity: failed to load witness OOBI into sentinel_hby"
-                )
+        # Mirrors `kg guardian up`'s tail exactly (up.py:251-280): pick one
+        # of the guardian's now-rotated-in witnesses, fetch its HTTP
+        # endpoint, and build the guardian's own witness-mediated OOBI by
+        # hand -- `connect_to_healthkeri` never hands this back, it's always
+        # been on the caller to construct it this way.
+        if not server_hab.kever.wits:
+            raise kering.ConfigurationError(
+                f"Server alias {alias!r} has no witnesses"
+            )
 
-        # ... and the reverse: without this, the sentinel identity's local db
-        # has no record that the guardian identity exists, so any reply the
-        # guardian daemon signs and sends to the sentinel daemon's watcher
-        # socket (`daemon_watch.register_issuer_watch`) is unverifiable and
-        # escrows forever ("escrowing without key state for signer") -- the
-        # one-directional cross-registration above was not enough for the
-        # daemons to trust each other's signed traffic in both directions.
-        #
-        # This must run *after* `connect_to_healthkeri` returns, not before:
-        # when `witness=True`, that call rotates `server_hab` (sn 0 -> 1) via
-        # `rotate_witness`, so registering only the sn=0 icp beforehand left
-        # the sentinel daemon's kvy permanently unaware of the guardian's
-        # post-rotation key state -- every reply the guardian signs afterward
-        # (sn=1) escrowed forever, since nothing re-synced the rotation event.
-        # Replay the guardian's *current* full KEL (icp + any rotation, e.g.
-        # from `rotate_witness` above), not just the icp, via `clonePreIter`
-        # -- `replyToOobi` only returns end-role reply messages, not KEL
-        # events, so it would not actually convey the rotation.
-        server_kel = bytearray()
-        for msg in server_hab.db.clonePreIter(pre=server_hab.pre):
-            server_kel.extend(msg)
-        parsing.Parser().parse(ims=server_kel, kvy=sentinel_hab.kvy)
+        witness_aid = random.choice(server_hab.kever.wits)
+        urls = server_hab.fetchUrls(
+            eid=witness_aid, scheme=kering.Schemes.http
+        ) or server_hab.fetchUrls(eid=witness_aid, scheme=kering.Schemes.https)
+        if not urls:
+            raise kering.ConfigurationError(
+                f"unable to query witness {witness_aid}, no http endpoint"
+            )
+        url = (
+            urls[kering.Schemes.https]
+            if kering.Schemes.https in urls
+            else urls[kering.Schemes.http]
+        )
+        guardian_oobi = f"{url.rstrip('/')}/oobi/{server_hab.pre}/witness"
+
+        # Load the guardian's witnessed OOBI into `sentinel_hby` *now*,
+        # before the sentinel daemon ever starts -- mirroring `up.py`'s
+        # `load_oobi(hby=sentinel_hby, oobi=keriguard_oobi, ...)`. This is
+        # the actual precondition for `daemon_watch.register_issuer_watch`'s
+        # later `watch(server_hab.pre, None)` call: that call passes no
+        # OOBI on the wire (same as `up.py`), so the sentinel daemon can
+        # only resolve the guardian AID if it already has this kever on
+        # disk from when this Habery was created.
+        load_oobi(hby=sentinel_hby, oobi=guardian_oobi, alias=alias)
         connecting.Organizer(hby=sentinel_hby).update(
-            pre=server_hab.pre, data=dict(alias=alias)
+            pre=server_hab.pre, data=dict(alias=alias, oobi=guardian_oobi)
         )
     except Exception as exc:
         logger.exception(f"bootstrap_server_identity: registration with healthKERI failed: {exc}")
@@ -222,22 +248,32 @@ def bootstrap_server_identity(
         f"bootstrap_server_identity: registered guardian={server_hab.pre} "
         f"sentinel={sentinel_hab.pre}"
     )
+
+    # Mirrors `kg guardian up`'s tail (up.py:306,319): populate the issuer
+    # record in the *guardian's own* KERIGuardBaser -- the same
+    # name/base scope `kg guardian start` reopens (`guardian_launch.py`'s
+    # BASE=settings.server_base or keystore.SERVER_BASE) -- not the vault's
+    # kgb, which `setup/page.py` already populates separately for its own
+    # (different-scoped) reads.
+    try:
+        kgb = KERIGuardBaser(name=name, base=keystore.SERVER_BASE)
+        kgb.set_issuer(aid=issuer_aid, oobi=issuer_oobi)
+        kgb.close()
+    except Exception:
+        logger.exception("bootstrap_server_identity: failed to set issuer on guardian KERIGuardBaser")
+
     return {
         "success": True,
         "server_aid": server_hab.pre,
         "sentinel_name": sentinel_name,
         "sentinel_alias": sentinel_alias,
         "sentinel_aid": sentinel_hab.pre,
-        # The guardian's own witness -- resolved into `server_hby` above by
-        # `connect_to_healthkeri`. `witness_oobi` is the witness's *own*
-        # self-OOBI (cid=witness_aid); it does not resolve the guardian's
-        # KEL if loaded elsewhere. `guardian_oobi` is the witness-mediated
-        # OOBI for `server_hab.pre` itself (cid=server_aid) -- callers must
-        # `load_oobi` *this* one into `vault.hby` (mirroring the existing
-        # issuer_aid/issuer_oobi pattern) to get the guardian AID's KEL into
-        # the vault's own kevers, a precondition for watching it.
-        "witness_aid": connect_result.get("witness_aid", ""),
-        "witness_name": connect_result.get("witness_name", ""),
-        "witness_oobi": connect_result.get("witness_oobi", ""),
-        "guardian_oobi": connect_result.get("guardian_oobi", ""),
+        # `guardian_oobi` is the witness-mediated OOBI for `server_hab.pre`
+        # itself (cid=server_aid), built the same way `up.py` builds it --
+        # callers must `load_oobi` *this* one into `vault.hby` (mirroring
+        # the existing issuer_aid/issuer_oobi pattern) to get the guardian
+        # AID's KEL into the vault's own kevers, a precondition for
+        # watching it.
+        "witness_aid": witness_aid,
+        "guardian_oobi": guardian_oobi,
     }

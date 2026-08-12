@@ -594,7 +594,7 @@ class ViewKERIGuardDeviceDialog(LocksmithDialog):
 
             publish_mode = settings.publish_mode if settings else "registrar"  # type: ignore
 
-            if publish_mode == "healthKERI" and essr:
+            if publish_mode == "serviceprovider" and essr:
                 await remoting.send_key_state_update(self.app, hab.pre)
                 await push_credential_via_essr(grant_bytes, essr, creder, introduction_bytes)
                 account = self.app.vault.plugin_state.get("keriguard", {}).get("account")

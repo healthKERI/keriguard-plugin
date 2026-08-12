@@ -83,7 +83,7 @@ class SetupPage(LocksmithFormPage):
         layout.addSpacing(10)
         self._credential_source_combo = FloatingLabelComboBox("Credential Source")
         self._credential_source_combo.setFixedWidth(420)
-        for mode in ["registrar", "healthKERI"]:
+        for mode in ["registrar", "serviceprovider"]:
             self._credential_source_combo.addItem(mode)
         self._credential_source_combo.currentTextChanged.connect(self._on_source_changed)
         layout.addWidget(self._credential_source_combo)
@@ -334,7 +334,7 @@ class SetupPage(LocksmithFormPage):
         self._issuer_oobi_field.setText(issuer_oobi)
 
         if not self._config.local:
-            idx = self._credential_source_combo.findText("healthKERI")
+            idx = self._credential_source_combo.findText("serviceprovider")
             self._credential_source_combo.setCurrentIndex(idx if idx >= 0 else 0)
         else:
             idx = self._credential_source_combo.findText("registrar")
@@ -496,7 +496,7 @@ class SetupPage(LocksmithFormPage):
             )
 
         # 5. Provision the dedicated headless machine identity (PLAN.md Phase 1).
-        server_identity = await self._provision_server_identity(vault, loop)
+        server_identity = await self._provision_server_identity(vault, loop, issuer_oobi)
         if not server_identity.get("success"):
             self._init_button.setText("Initialize")
             self._init_button.setEnabled(True)
@@ -558,8 +558,8 @@ class SetupPage(LocksmithFormPage):
         self._nav_timer.start(1000)
         logger.info("SetupPage: KERIGuard user plugin initialized")
 
-    async def _provision_server_identity(self, vault, loop) -> dict:
-        """Provision the dedicated headless machine identity (PLAN.md Phase 1).
+    async def _provision_server_identity(self, vault, loop, issuer_oobi: str) -> dict:
+        """Provision the dedicated headless machine identity
 
         Uses the admin-issued auth code carried in the imported config file
         (self._config.server.auth_key) to register a new, non-delegated AID
@@ -598,7 +598,7 @@ class SetupPage(LocksmithFormPage):
             result = await loop.run_in_executor(
                 None,
                 bootstrap_server_identity,
-                bran, server_name, server_alias, auth_code,
+                bran, server_name, server_alias, auth_code, issuer_oobi,
                 True,  # witness — DAEMONS.md Decisions: guardian AID is witnessed
             )
         finally:
@@ -624,7 +624,6 @@ class SetupPage(LocksmithFormPage):
             "sentinel_alias": result["sentinel_alias"],
             "sentinel_aid": result["sentinel_aid"],
             "guardian_oobi": result.get("guardian_oobi", ""),
-            "witness_name": result.get("witness_name", ""),
         }
 
     async def _load_schemas(self, vault, loop):

@@ -242,7 +242,7 @@ class KERIGuardUserPlugin(PluginBase, AccountProviderPlugin):
                 # startup (healthKERI account not yet configured).  Retry each iteration
                 # so polling activates as soon as the account is ready.
                 if (
-                    settings.credential_source == "healthKERI"
+                    settings.credential_source == "serviceprovider"
                     and self._poller is not None
                     and self._poller.loader is None
                 ):
