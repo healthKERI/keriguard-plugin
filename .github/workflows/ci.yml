@@ -22,6 +22,12 @@ jobs:
         env:
           LOCKSMITH_TOKEN: ${{ secrets.LOCKSMITH_TOKEN }}
         run: |
+          # Length as stored vs. length after stripping whitespace — should be equal
+          printf '%s' "${LOCKSMITH_TOKEN}" | wc -c
+          printf '%s' "${LOCKSMITH_TOKEN}" | tr -d '[:space:]' | wc -c
+          # Also test git auth directly with the token as password
+          echo "https://x-access-token:${LOCKSMITH_TOKEN}@github.com" | \
+            grep -c $'\n' && echo "WARNING: newline in token" || true
           curl -sS -o /dev/null -w "%{http_code}\n" \
             -H "Authorization: Bearer ${LOCKSMITH_TOKEN}" \
             https://api.github.com/repos/healthKERI/locksmith
@@ -30,7 +36,10 @@ jobs:
         env:
           LOCKSMITH_TOKEN: ${{ secrets.LOCKSMITH_TOKEN }}
         run: |
-          git config --global url."https://x-access-token:${LOCKSMITH_TOKEN}@github.com/".insteadOf "https://github.com/"
+          # Strip any stray whitespace/newlines from the secret
+          TOKEN="$(printf '%s' "${LOCKSMITH_TOKEN}" | tr -d '[:space:]')"
+          git config --global credential.helper \
+            "!f() { echo username=x-access-token; echo \"password=${TOKEN}\"; }; f"
           # Prove the credential works for the private clone before pip runs
           git ls-remote https://github.com/healthKERI/locksmith.git HEAD >/dev/null \
             && echo "locksmith clone auth OK" || { echo "locksmith clone auth FAILED"; exit 1; }
@@ -38,10 +47,6 @@ jobs:
           source /tmp/venv/bin/activate
           pip install --upgrade pip
           pip install -e plugins/user
-          # keriguard-admin depends on locksmith==0.0.1, which is not the
-          # PyPI package of that name (an unrelated project). Install the
-          # real locksmith from source first so the requirement resolves
-          # against it instead of failing / pulling the wrong package.
           pip install "locksmith @ git+https://github.com/healthKERI/locksmith.git"
           pip install -e plugins/admin
 
