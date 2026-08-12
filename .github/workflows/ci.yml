@@ -30,9 +30,7 @@ jobs:
         env:
           LOCKSMITH_TOKEN: ${{ secrets.LOCKSMITH_TOKEN }}
         run: |
-          AUTH_B64="$(printf 'x-access-token:%s' "${LOCKSMITH_TOKEN}" | base64 -w0)"
-          git config --global 'http.https://github.com/.extraheader' "Authorization: basic ${AUTH_B64}"
-          git config --global --get-regexp 'http\.' >/dev/null && echo "extraheader stored"
+          git config --global url."https://x-access-token:${LOCKSMITH_TOKEN}@github.com/".insteadOf "https://github.com/"
           # Prove the credential works for the private clone before pip runs
           git ls-remote https://github.com/healthKERI/locksmith.git HEAD >/dev/null \
             && echo "locksmith clone auth OK" || { echo "locksmith clone auth FAILED"; exit 1; }
