@@ -10,6 +10,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -28,9 +30,11 @@ jobs:
         env:
           LOCKSMITH_TOKEN: ${{ secrets.LOCKSMITH_TOKEN }}
         run: |
-          git config --global credential.helper store
-          printf 'https://x-access-token:%s@github.com\n' "${LOCKSMITH_TOKEN}" > "${HOME}/.git-credentials"
-          chmod 600 "${HOME}/.git-credentials"
+          AUTH_B64="$(printf 'x-access-token:%s' "${LOCKSMITH_TOKEN}" | base64 -w0)"
+          git config --global http.https://github.com/.extraheader "Authorization: basic ${AUTH_B64}"
+          # Prove the credential works for the private clone before pip runs
+          git ls-remote https://github.com/healthKERI/locksmith.git HEAD >/dev/null \
+            && echo "locksmith clone auth OK" || { echo "locksmith clone auth FAILED"; exit 1; }
           python -m venv /tmp/venv
           source /tmp/venv/bin/activate
           pip install --upgrade pip
