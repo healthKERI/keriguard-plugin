@@ -163,31 +163,12 @@ def bootstrap_server_identity(
             pre=sentinel_hab.pre, data=dict(alias=sentinel_alias)
         )
 
-        # Resolve the issuer's OOBI into *both* Haberies up front, mirroring
-        # `kg guardian up`'s `load_oobi(hby=keriguard_hby, oobi=config.issuer.oobi,
-        # ...)` / `load_oobi(hby=sentinel_hby, oobi=config.issuer.oobi, ...)`
-        # step (up.py:187-188) -- done here, not deferred to the watch()
-        # call below, for two independent reasons: the guardian daemon's own
-        # Verifier needs the issuer's kever to verify incoming credentials,
-        # and -- the one that actually breaks SaaS watching --
-        # `add_watched_identifier` (sentinel/core/watching.py:225-273) never
-        # reads the `oobi` field off the watch() message at all; in SaaS
-        # mode (registrar_url=None, which is what `setup_hk` always passes)
-        # it purely checks `watched_aid in hby.kevers` and raises "not found
-        # in KERI database" otherwise. Without this, `register_issuer_watch`'s
-        # later `watch(issuer_aid, issuer_oobi)` call fails every time.
+        # Resolve the issuer's OOBI into *both* Haberies up front
         issuer_aid = load_oobi(hby=server_hby, oobi=issuer_oobi, alias="issuer")
         load_oobi(hby=sentinel_hby, oobi=issuer_oobi, alias="issuer")
 
         from sentinel.framework.connecting import connect_to_healthkeri
 
-        # `connect_to_healthkeri` returns nothing -- same as `kg guardian
-        # up` (up.py:241-249), which discards its result too. Everything
-        # needed afterward is derived from `server_hab`, which this call
-        # mutates in place (witness rotation when `witness=True`).
-        # `bootstrap_server_identity` is sync (called via
-        # `run_in_executor`), so this still needs `asyncio.run`, not a bare
-        # `await`.
         asyncio.run(
             connect_to_healthkeri(
                 server_name=name,
@@ -202,9 +183,7 @@ def bootstrap_server_identity(
 
         # Mirrors `kg guardian up`'s tail exactly (up.py:251-280): pick one
         # of the guardian's now-rotated-in witnesses, fetch its HTTP
-        # endpoint, and build the guardian's own witness-mediated OOBI by
-        # hand -- `connect_to_healthkeri` never hands this back, it's always
-        # been on the caller to construct it this way.
+        # endpoint, and build the guardian's own witness-mediated OOBI by hand
         if not server_hab.kever.wits:
             raise kering.ConfigurationError(
                 f"Server alias {alias!r} has no witnesses"
@@ -225,14 +204,6 @@ def bootstrap_server_identity(
         )
         guardian_oobi = f"{url.rstrip('/')}/oobi/{server_hab.pre}/witness"
 
-        # Load the guardian's witnessed OOBI into `sentinel_hby` *now*,
-        # before the sentinel daemon ever starts -- mirroring `up.py`'s
-        # `load_oobi(hby=sentinel_hby, oobi=keriguard_oobi, ...)`. This is
-        # the actual precondition for `daemon_watch.register_issuer_watch`'s
-        # later `watch(server_hab.pre, None)` call: that call passes no
-        # OOBI on the wire (same as `up.py`), so the sentinel daemon can
-        # only resolve the guardian AID if it already has this kever on
-        # disk from when this Habery was created.
         load_oobi(hby=sentinel_hby, oobi=guardian_oobi, alias=alias)
         connecting.Organizer(hby=sentinel_hby).update(
             pre=server_hab.pre, data=dict(alias=alias, oobi=guardian_oobi)
@@ -268,12 +239,6 @@ def bootstrap_server_identity(
         "sentinel_name": sentinel_name,
         "sentinel_alias": sentinel_alias,
         "sentinel_aid": sentinel_hab.pre,
-        # `guardian_oobi` is the witness-mediated OOBI for `server_hab.pre`
-        # itself (cid=server_aid), built the same way `up.py` builds it --
-        # callers must `load_oobi` *this* one into `vault.hby` (mirroring
-        # the existing issuer_aid/issuer_oobi pattern) to get the guardian
-        # AID's KEL into the vault's own kevers, a precondition for
-        # watching it.
         "witness_aid": witness_aid,
         "guardian_oobi": guardian_oobi,
     }
