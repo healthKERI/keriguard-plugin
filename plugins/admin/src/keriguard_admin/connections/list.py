@@ -4,14 +4,14 @@ from pathlib import Path
 from typing import Dict, Any, TYPE_CHECKING
 
 from PySide6.QtCore import Signal
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QSizePolicy, QFileDialog, QMessageBox
 from PySide6.QtGui import QPalette, QColor
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QSizePolicy, QFileDialog, QMessageBox
 from keri import help
-
-from locksmith.ui import colors
-from locksmith.ui.toolkit.tables import PaginatedTableWidget
+from keri.core.serdering import SerderACDC
 from keriguard.core.kering import Issuer
 from keriguard.core.wireguarding import Schema
+from locksmith.ui import colors
+from locksmith.ui.toolkit.tables import PaginatedTableWidget
 
 if TYPE_CHECKING:
     from locksmith.ui.vault.page import VaultPage
@@ -29,7 +29,7 @@ class ConnectionsListPage(QWidget):
         self._parent = parent
         self.app = app
         self.vault_name = ""
-        self._connections_cache: dict[str, dict[str, Any]] = {}
+        self._connections_cache: dict[str, SerderACDC] = {}
         self._setup_ui()
 
     def _setup_ui(self):
@@ -44,12 +44,12 @@ class ConnectionsListPage(QWidget):
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
         self.table = PaginatedTableWidget(
-            columns=["Name", "SAID", "Peer 1", "Peer 2", "Status"],
+            columns=["Peer 1", "Peer 1 IP", "Peer 2", "Peer 2 IP", "Status"],
             column_widths={
-                "Name": 180,
-                "Status": 90,
-                "Peer 1": 130,
-                "Peer 2": 130,
+                "Peer 1": 140,
+                "Peer 1 IP": 170,
+                "Peer 2": 140,
+                "Peer 2 IP": 170,
                 "Actions": 90,
             },
             title="Connections",
@@ -70,6 +70,10 @@ class ConnectionsListPage(QWidget):
         self.table.row_action_triggered.connect(self._on_row_action)
         self.table.row_clicked.connect(self._on_row_clicked)
         self.table.add_clicked.connect(self._on_issue_connection)
+        self.table.load_requested.connect(self._refresh)
+
+    def _refresh(self, params):
+        self.table.set_static_data(self._load_rows())
 
     def _get_peer_name(self, interface_said: str) -> str:
         if not interface_said or not self.app or not self.app.vault:
@@ -77,23 +81,11 @@ class ConnectionsListPage(QWidget):
         try:
             creder, *_ = self.app.vault.rgy.reger.cloneCred(said=interface_said)
             return (
-                creder.attrib.get("interfaceMetadata", {}).get("interfaceName", "")
-                or interface_said
+                    creder.attrib.get("interfaceMetadata", {}).get("interfaceName", "")
+                    or interface_said
             )
         except Exception:
             return interface_said
-
-    def _transform_connection_to_row(self, conn: dict[str, Any]) -> dict[str, Any]:
-        said = conn.get("said", "")
-        self._connections_cache[said] = conn
-        return {
-            "Name": conn.get("connection_name", ""),
-            "SAID": said,
-            "Peer 1": conn.get("peer1_name", ""),
-            "Peer 2": conn.get("peer2_name", ""),
-            "Status": "Issued",
-            "_said": said,
-        }
 
     def _load_rows(self) -> list[dict[str, Any]]:
         if not self.app or not self.app.vault:
@@ -118,23 +110,48 @@ class ConnectionsListPage(QWidget):
                     if creder.regi != registry.regk:
                         continue
 
-                    edge_block = creder.sad.get("e", {})
-                    peer1 = edge_block.get("peer1", {})
-                    peer2 = edge_block.get("peer2", {})
-                    conn_meta = peer1.get("connectionMetadata", {})
+                    rows.append(self._transform_connection_to_row(creder))
 
-                    rows.append(self._transform_connection_to_row({
-                        "said": creder.said,
-                        "peer1_name": self._get_peer_name(peer1.get("n", "")),
-                        "peer2_name": self._get_peer_name(peer2.get("n", "")),
-                        "connection_name": conn_meta.get("connectionName", ""),
-                    }))
                 except Exception as exc:
                     logger.warning(f"Skipping connection credential {saider.qb64}: {exc}")
         except Exception as exc:
             logger.exception(f"Error iterating connection credentials: {exc}")
 
         return rows
+
+    def _transform_connection_to_row(self, creder: SerderACDC) -> dict[str, Any]:
+        edge_block = creder.sad.get("e", {})
+        peer1 = edge_block.get("peer1", {})
+        peer2 = edge_block.get("peer2", {})
+
+        interface_said = peer1.get("n", "")
+        peer1_creder, *_ = self.app.vault.rgy.reger.cloneCred(said=interface_said)
+        contact = self.app.vault.org.get(peer1_creder.attrib.get("i", ""))
+        peer1_name = contact.get("alias", "")
+        interface = peer1_creder.attrib.get("interface", "")
+        peer1_ip = interface.get("address")[0].split("/")[0]
+
+        interface_said = peer2.get("n", "")
+        peer2_creder, *_ = self.app.vault.rgy.reger.cloneCred(said=interface_said)
+        contact = self.app.vault.org.get(peer2_creder.attrib.get("i", ""))
+        peer2_name = contact.get("alias", "")
+        interface = peer2_creder.attrib.get("interface", "")
+        peer2_ip = interface.get("address")[0].split("/")[0]
+
+        conn_meta = peer1.get("connectionMetadata", {})
+        connection_name = conn_meta.get("connectionName", "")
+        said = creder.said
+        self._connections_cache[said] = creder
+        return {
+            "Name": connection_name,
+            "SAID": said,
+            "Peer 1": peer1_name,
+            "Peer 1 IP": peer1_ip,
+            "Peer 2": peer2_name,
+            "Peer 2 IP": peer2_ip,
+            "Status": "Active",
+            "_said": said,
+        }
 
     def _on_row_clicked(self, row_data: object) -> None:
         if isinstance(row_data, dict):
@@ -168,8 +185,7 @@ class ConnectionsListPage(QWidget):
         if not said or not self.app or not self.app.vault:
             return
 
-        conn = self._connections_cache.get(said, {})
-        conn_name = conn.get("connection_name") or row_data.get("Name") or said[:12]
+        conn_name = row_data.get("Name") or said[:12]
         default_filename = f"{conn_name}.cesr"
 
         kg_db = self.app.vault.plugin_state.get("keriguard", {}).get("db")
