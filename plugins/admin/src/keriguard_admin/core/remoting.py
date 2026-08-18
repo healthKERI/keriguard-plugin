@@ -6,6 +6,8 @@ from keri import help, kering
 from keri.app.httping import CESR_CONTENT_TYPE
 from keri.core.serdering import SerderACDC
 
+from keriguard_admin.core.essring import APIClient
+
 logger = help.ogler.getLogger(__name__)
 
 
@@ -15,6 +17,18 @@ async def push_credential_to_registrar(grant: bytes, registrar_url: str) -> None
         response = await client.put(
             registrar_url,
             content=grant,
+            headers={"Content-Type": CESR_CONTENT_TYPE},
+            timeout=30.0,
+        )
+        response.raise_for_status()
+    logger.info(f"Credential pushed to registrar at {registrar_url} (HTTP {response.status_code})")
+
+async def push_revocation_to_registrar(rev: bytes, anc: bytes, registrar_url: str) -> None:
+    """PUT CESR grant bytes to the registrar. Raises httpx.HTTPError on failure."""
+    async with httpx.AsyncClient() as client:
+        response = await client.put(
+            registrar_url,
+            content=rev,
             headers={"Content-Type": CESR_CONTENT_TYPE},
             timeout=30.0,
         )
@@ -157,3 +171,50 @@ async def _ensure_issuer_watched(essr, hab, hby, account, team) -> None:
             logger.info(f"Issuer {hab.pre[:16]}… registered as watched on healthKERI SaaS")
     except Exception as exc:
         logger.warning(f"_ensure_issuer_watched: {exc}")
+
+
+async def push_revocation_via_essr(
+    connection_said: str,
+    issuer_aid: str,
+    essr: APIClient,
+    rev: bytes,
+    anc: bytes
+) -> None:
+    """POST credential revocation (TEL + KEL) to hkweb's /registrar/tel endpoint via ESSR.
+
+    Parameters:
+        connection_said (str): SAID of the connection credential being revoked
+        issuer_aid (str): AID of the credential issuer
+        essr (APIClient): ESSR client for authenticated requests
+        rev (bytes): TEL revocation event (CESR bytes)
+        anc (bytes): KEL anchor event (CESR bytes)
+
+    Raises:
+        RuntimeError: If the backend returns non-success status
+    """
+    # Construct metadata JSON with issuer AID (required by backend)
+    metadata_json = json.dumps({
+        "said": connection_said,
+        "issuer": issuer_aid,
+    })
+
+    # Build multipart form with doc, tel, and kel parts
+    files = {
+        'doc': ('doc', metadata_json, 'application/json'),
+        'tel': ('tel', rev, CESR_CONTENT_TYPE),
+        'kel': ('kel', anc, CESR_CONTENT_TYPE),
+    }
+
+    response = await essr.request(
+        path="/registrar/tel",
+        method="POST",
+        files=files,
+        timeout=30,
+    )
+
+    if response is None or response.status_code not in (200, 204):
+        status = response.status_code if response else "None"
+        text = response.text if response else ""
+        raise RuntimeError(f"hkweb /registrar/tel returned {status}: {text}")
+
+    logger.info(f"Credential revocation for {connection_said} pushed to hkweb /registrar/tel via ESSR")

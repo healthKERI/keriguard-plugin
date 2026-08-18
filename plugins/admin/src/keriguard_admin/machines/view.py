@@ -5,7 +5,6 @@ locksmith.ui.vault.healthKERI.machines.view module
 Dialog for viewing healthKERI machine details.
 """
 import time
-from collections.abc import Callable
 from datetime import datetime
 from typing import Any
 
@@ -20,6 +19,7 @@ from keri.app import connecting
 from keri.help import helping
 from keri.peer import exchanging
 from keriguard.core.kering import Issuer
+from locksmith.core.signals import DoerSignalBridge
 from locksmith.ui import colors
 from locksmith.ui.toolkit.widgets import (
     LocksmithInvertedButton
@@ -62,6 +62,7 @@ class ViewKERIGuardDeviceDialog(LocksmithDialog):
         """
         self.app = app
         self.machine = machine
+        self.signals = DoerSignalBridge()
 
         self.name = machine.get('name', '')
         self.aid = machine.get('aid', '')
@@ -120,7 +121,7 @@ class ViewKERIGuardDeviceDialog(LocksmithDialog):
         self.main_layout.addStretch()
 
         self.close_button.clicked.connect(self.close)
-        self.app.vault.signals.auth_codes_entered.connect(self._on_auth_codes_entered)
+        self.signals.auth_codes_entered.connect(self._on_auth_codes_entered)
 
 
     # ------------------------------------------------------------------
@@ -507,8 +508,7 @@ class ViewKERIGuardDeviceDialog(LocksmithDialog):
             hab=hab,
             witness_ids=hab.kever.wits,
             auth_only=True,
-            signals=self.app.vault.signals,
-            parent=self
+            signals=self.signals
         )
         auth_dialog.open()
         return
@@ -521,7 +521,7 @@ class ViewKERIGuardDeviceDialog(LocksmithDialog):
         Args:
             data: Dictionary containing 'codes' key with list of "witness_id:passcode" strings
         """
-        self.app.vault.signals.auth_codes_entered.disconnect(self._on_auth_codes_entered)
+        self.signals.auth_codes_entered.disconnect(self._on_auth_codes_entered)
 
         try:
             hby = self.app.vault.hby

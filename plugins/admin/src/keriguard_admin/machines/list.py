@@ -419,9 +419,6 @@ class MachinesListPage(QWidget):
             ipaddress = address[0] if address else ""
             listen_port = interface.get("listenPort", 51820)
 
-        print(address or [])
-        print(ipaddress)
-
         # Create the peer 1 data structure
         peer1_data = {
             'name': machine_name,

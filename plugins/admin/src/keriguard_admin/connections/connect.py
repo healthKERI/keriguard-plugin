@@ -10,6 +10,7 @@ from keri import help
 from keri.help import helping
 from keriguard.core.kering import Issuer
 from keriguard.core.wireguarding import Schema
+from locksmith.core.signals import DoerSignalBridge
 from locksmith.ui import colors
 from locksmith.ui.toolkit.widgets import (
     LocksmithDialog,
@@ -196,6 +197,8 @@ class IssueConnectionCredentialDialog(LocksmithDialog):
         self._selected_peer1_machine = None
         self._selected_peer2_machine = None
         self._should_reset_on_show = True  # Flag to control reset behavior
+        self.signals = DoerSignalBridge()
+
 
         # Create content widget with scroll area for long form
         scroll_area = QScrollArea()
@@ -239,7 +242,7 @@ class IssueConnectionCredentialDialog(LocksmithDialog):
         self.setFixedSize(700, 900)
 
         scroll_area.setWidget(content_widget)
-        self.app.vault.signals.auth_codes_entered.connect(self._on_auth_codes_entered)
+        self.signals.auth_codes_entered.connect(self._on_auth_codes_entered)
 
         logger.info("IssueConnectionCredentialDialog initialized")
 
@@ -583,7 +586,7 @@ class IssueConnectionCredentialDialog(LocksmithDialog):
             hab=hab,
             witness_ids=hab.kever.wits,
             auth_only=True,
-            signals=self.app.vault.signals,
+            signals=self.signals,
             parent=self
         )
         auth_dialog.open()
@@ -601,7 +604,7 @@ class IssueConnectionCredentialDialog(LocksmithDialog):
             data (dict): A dictionary containing entered authentication codes mapped to
              witness
         """
-        self.app.vault.signals.auth_codes_entered.disconnect(self._on_auth_codes_entered)
+        self.signals.auth_codes_entered.disconnect(self._on_auth_codes_entered)
         try:
             kg_db = self.app.vault.plugin_state.get("keriguard", {}).get("db")
             settings = kg_db.keriguardSettings.get(keys=("settings",)) if kg_db else None
