@@ -3,11 +3,13 @@
 from pathlib import Path
 from typing import Dict, Any, TYPE_CHECKING
 
+import qasync
 from PySide6.QtCore import Signal
 from PySide6.QtGui import QPalette, QColor
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QSizePolicy, QFileDialog, QMessageBox
 from keri import help
 from keri.core.serdering import SerderACDC
+from keri.kering import Ilks
 from keriguard.core.kering import Issuer
 from keriguard.core.wireguarding import Schema
 from locksmith.ui import colors
@@ -43,6 +45,14 @@ class ConnectionsListPage(QWidget):
         self.setAutoFillBackground(True)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
+        # Define all possible row action icons
+        self._row_action_icons = {
+            "View": ":/assets/material-icons/visibility.svg",
+            "Disconnect": ":/assets/material-icons/link-off.svg",
+            "Export": ":/assets/material-icons/export.svg",
+            "Delete": ":/assets/material-icons/delete.svg",
+        }
+
         self.table = PaginatedTableWidget(
             columns=["Peer 1", "Peer 1 IP", "Peer 2", "Peer 2 IP", "Status"],
             column_widths={
@@ -55,12 +65,15 @@ class ConnectionsListPage(QWidget):
             title="Connections",
             icon_path=":/assets/material-icons/airline_stops.svg",
             show_add_button=True,
-            add_button_text="Connect Devices",
-            row_actions=["View", "Export"],
-            row_action_icons={
-                "View": ":/assets/material-icons/visibility.svg",
-                "Export": ":/assets/material-icons/export.svg",
+            column_sort_mapping={
+                "Peer 1": "peer1_name",
+                "Peer 2": "peer2_name",
+                "Status": "status"
             },
+            add_button_text="Connect Devices",
+            row_actions=["View", "Disconnect", "Export", "Delete"],
+            row_action_icons=self._row_action_icons,
+            row_actions_callback=self._get_row_actions,
             items_per_page=10,
             show_search=True,
             parent=self,
@@ -70,9 +83,36 @@ class ConnectionsListPage(QWidget):
         self.table.row_action_triggered.connect(self._on_row_action)
         self.table.row_clicked.connect(self._on_row_clicked)
         self.table.add_clicked.connect(self._on_issue_connection)
-        self.table.load_requested.connect(self._refresh)
+        self.table.load_requested.connect(self._on_load_requested)
 
-    def _refresh(self, params):
+    def _get_row_actions(self, row_data: dict[str, Any]) -> tuple[list[str], dict[str, str]]:
+        """
+        Determine which row actions to show based on connection status.
+
+        - Shows "Disconnect" only when status is "Active"
+        - Shows "Delete" only when status is "Disconnected" (revoked)
+        - Always shows "View" and "Export"
+
+        Returns:
+            Tuple of (actions list, action icons dict)
+        """
+        status = row_data.get("Status", "")
+        actions = ["View"]
+
+        if status == "Active":
+            actions.append("Disconnect")
+        elif status == "Disconnected":
+            actions.append("Delete")
+
+        actions.append("Export")
+
+        # Filter icons to only include those for displayed actions
+        icons = {action: self._row_action_icons[action] for action in actions}
+
+        return actions, icons
+
+    @qasync.asyncSlot(dict)
+    async def _on_load_requested(self, params: dict):
         self.table.set_static_data(self._load_rows())
 
     def _get_peer_name(self, interface_said: str) -> str:
@@ -141,6 +181,19 @@ class ConnectionsListPage(QWidget):
         conn_meta = peer1.get("connectionMetadata", {})
         connection_name = conn_meta.get("connectionName", "")
         said = creder.said
+
+        regk = creder.regi
+        status = self.app.vault.rgy.tevers[regk].vcState(creder.said)
+        if status.et in [Ilks.iss, Ilks.bis]:
+            status = "Active"
+            status_color = colors.SUCCESS_INDICATOR
+        elif status.et in [Ilks.rev, Ilks.brv]:
+            status = "Disconnected"
+            status_color = colors.DANGER
+        else:
+            status = "Unknown"
+            status_color = colors.WARNING_YELLOW
+
         self._connections_cache[said] = creder
         return {
             "Name": connection_name,
@@ -149,7 +202,8 @@ class ConnectionsListPage(QWidget):
             "Peer 1 IP": peer1_ip,
             "Peer 2": peer2_name,
             "Peer 2 IP": peer2_ip,
-            "Status": "Active",
+            "Status": status,
+            "Status_color": status_color,
             "_said": said,
         }
 
@@ -163,8 +217,74 @@ class ConnectionsListPage(QWidget):
             said = row_data.get("_said", "")
             if said:
                 self.view_connection.emit(said)
+        elif action == "Disconnect":
+            self._on_disconnect_connection(row_data)
+        elif action == "Delete":
+            self._on_delete_connection(row_data)
         elif action == "Export":
             self._export_credential(row_data)
+
+    def _on_disconnect_connection(self, row_data: Dict[str, Any]) -> None:
+        """Handle Disconnect connection action."""
+        from .disconnect import DisconnectConnectionDialog
+
+        connection_said = row_data.get("_said", "")
+        connection_name = row_data.get("Name", "")
+
+        if not connection_said:
+            logger.error("Cannot disconnect: no connection SAID found")
+            return
+
+        if not connection_name:
+            # Fallback to SAID prefix if name is missing
+            connection_name = connection_said[:12]
+
+        logger.info(f"Opening disconnect dialog for connection: {connection_name}")
+
+        dialog = DisconnectConnectionDialog(
+            app=self.app,
+            connection_name=connection_name,
+            connection_said=connection_said,
+            on_success=self._on_connection_disconnected,
+            parent=self._parent
+        )
+        dialog.open()
+
+    def _on_connection_disconnected(self, connection_said: str):
+        """Handle successful connection disconnection."""
+        logger.info(f"Connection {connection_said} disconnected, reloading list")
+        self.on_show()  # Refresh the connections list
+
+    def _on_delete_connection(self, row_data: Dict[str, Any]) -> None:
+        """Handle Delete connection action."""
+        from .delete import DeleteConnectionDialog
+
+        connection_said = row_data.get("_said", "")
+        connection_name = row_data.get("Name", "")
+
+        if not connection_said:
+            logger.error("Cannot delete: no connection SAID found")
+            return
+
+        if not connection_name:
+            # Fallback to SAID prefix if name is missing
+            connection_name = connection_said[:12]
+
+        logger.info(f"Opening delete dialog for connection: {connection_name}")
+
+        dialog = DeleteConnectionDialog(
+            app=self.app,
+            connection_name=connection_name,
+            connection_said=connection_said,
+            on_success=self._on_connection_deleted,
+            parent=self._parent
+        )
+        dialog.open()
+
+    def _on_connection_deleted(self, connection_said: str):
+        """Handle successful connection deletion."""
+        logger.info(f"Connection {connection_said} deleted, reloading list")
+        self.on_show()  # Refresh the connections list
 
     def _on_issue_connection(self) -> None:
         """Show the Issue Connection Credential dialog."""
@@ -228,4 +348,4 @@ class ConnectionsListPage(QWidget):
 
     def on_show(self) -> None:
         self._connections_cache.clear()
-        self.table.set_static_data(self._load_rows())
+        self.table.request_load()

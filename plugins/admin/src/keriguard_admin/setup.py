@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
 from keri.app.habbing import GroupHab
 from keriguard.core.wireguarding import SCHEMA_OOBIS, Schema
 from locksmith.core.credentialing import LoadSchemaDoer
+from locksmith.core.signals import DoerSignalBridge
 
 from keriguard_admin.db.basing import KERIGuardSettings
 from locksmith.core.apping import LocksmithApplication
@@ -59,6 +60,7 @@ class KERIGuardAdminSetupPage(LocksmithFormPage):
         )
         self.app = app
         self._parent = parent
+        self.signals = DoerSignalBridge()
         self._build_content()
         logger.info("KERIGuard setup initialized")
 
@@ -401,7 +403,7 @@ class KERIGuardAdminSetupPage(LocksmithFormPage):
             hab=hab,
             witness_ids=hab.kever.wits,
             auth_only=True,
-            signals=self.app.vault.signals,
+            signals=self.signals,
             parent=self
         )
         auth_dialog.open()
@@ -414,9 +416,9 @@ class KERIGuardAdminSetupPage(LocksmithFormPage):
         Args:
             data: Dictionary containing 'codes' key with list of "witness_id:passcode" strings
         """
-        self.app.vault.signals.auth_codes_entered.disconnect(self._on_auth_codes_entered)
+        self.signals.auth_codes_entered.disconnect(self._on_auth_codes_entered)
         codes = data.get('codes', [])
-        logger.info(f"Received {len(codes)} auth codes from WitnessAuthenticationDialog")
+        logger.info(f"Setup received {len(codes)} auth codes from WitnessAuthenticationDialog")
 
         self._create_load_schema_doer(
             oobi=SCHEMA_OOBIS[Schema.INTERFACE_SCHEMA],
@@ -454,7 +456,7 @@ class KERIGuardAdminSetupPage(LocksmithFormPage):
                 create_registry=create_registry,
                 issuer_aid=issuer_aid,
                 auth_codes=auth_codes,
-                signal_bridge=self.app.vault.signals if hasattr(self.app.vault, 'signals') else None
+                signal_bridge=self.signals
             )
 
             # Launch the doer
@@ -482,7 +484,7 @@ class KERIGuardAdminSetupPage(LocksmithFormPage):
             return
 
         if event_type == "schema_loaded" and data.get('said', "") == Schema.CONNECTION_SCHEMA:
-            logger.info(f"AddSchemaDialog received: {doer_name} - {event_type}")
+            logger.info(f"KERIGuard admin setup received: {doer_name} - {event_type}")
             self.setup_complete_clicked.emit()
         elif event_type == "schema_load_failed":
             error_msg = data.get('error', 'Schema loading failed')
@@ -492,8 +494,8 @@ class KERIGuardAdminSetupPage(LocksmithFormPage):
     def on_show(self) -> None:
         logger.info("KERIGuard setup shown")
 
-        self.app.vault.signals.auth_codes_entered.connect(self._on_auth_codes_entered)
-        self.app.vault.signals.doer_event.connect(self._on_doer_event)
+        self.signals.auth_codes_entered.connect(self._on_auth_codes_entered)
+        self.signals.doer_event.connect(self._on_doer_event)
         self._load_dropdowns()
 
     def _on_toggle_changed(self, value: str):
